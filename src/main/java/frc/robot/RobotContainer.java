@@ -17,8 +17,10 @@ import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.*;
 import frc.robot.commands.*;
+import frc.robot.util.CANBusMonitor;
 import frc.robot.util.ControllerTelemetry;
 import frc.robot.util.FuelSim;
+import frc.robot.util.PowerMonitor;
 
 public class RobotContainer {
     
@@ -67,12 +69,16 @@ public class RobotContainer {
     
     // Utilities
     private final ControllerTelemetry controllerTelemetry;
+    private final PowerMonitor powerMonitor;
+    private final CANBusMonitor canBusMonitor;
     
     // ==================== AUTONOMOUS CHOOSER ====================
     private final SendableChooser<Command> autoChooser = new SendableChooser<>();
 
     public RobotContainer() {
         controllerTelemetry = new ControllerTelemetry(joystick);
+        powerMonitor = new PowerMonitor();
+        canBusMonitor = new CANBusMonitor();
         
         if (DISABLE_INTAKE_DEPLOY_MOTOR) {
             intakePositionSubsystem.disableDeployMotor();
@@ -322,6 +328,8 @@ public class RobotContainer {
     
     public void periodic() {
         controllerTelemetry.periodic();
+        powerMonitor.updateTelemetry();
+        canBusMonitor.updateTelemetry();
         updateVelocityDipDetection();
         updateLEDFeedback();
         updateControllerRumble();
@@ -387,9 +395,22 @@ public class RobotContainer {
      * Provides visual feedback for shooting, intake, and other states
      */
     private void updateLEDFeedback() {
+        // EMERGENCY OVERRIDE: Brownout detected - rapid red/yellow blink
+        if (powerMonitor.isBrownout()) {
+            // Alternate red/yellow to indicate power emergency
+            candleSubsystem.setRapidRedBlink();
+            return;
+        }
+        
         // CRITICAL OVERRIDE: Flywheel overheating - rapid red blink
         if (flywheelSubsystem.isOverheating()) {
             candleSubsystem.setRapidRedBlink();
+            return;
+        }
+        
+        // WARNING: Low voltage - dim yellow
+        if (powerMonitor.isLowVoltage()) {
+            candleSubsystem.setRGB(100, 100, 0); // Dim yellow warning
             return;
         }
         

@@ -51,9 +51,9 @@ public final class TurretConstants {
     public static final double POSITION_TOLERANCE_ROTATIONS = 0.005; // ~1.8 degrees
     public static final double VELOCITY_TOLERANCE_RPS = 0.1;
     
-    // Current Limits
-    public static final double SUPPLY_CURRENT_LIMIT = 30.0; // Amps
-    public static final double STATOR_CURRENT_LIMIT = 60.0; // Amps
+    // Current Limits (prevent brownouts)
+    public static final double SUPPLY_CURRENT_LIMIT = 20.0; // Amps - reduced from 30A
+    public static final double STATOR_CURRENT_LIMIT = 40.0; // Amps - reduced from 60A
     public static final boolean ENABLE_CURRENT_LIMIT = true;
     
     // Motor Configuration

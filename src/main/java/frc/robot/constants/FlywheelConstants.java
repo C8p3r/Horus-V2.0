@@ -32,9 +32,10 @@ public final class FlywheelConstants {
     public static final double MAX_ACCELERATION_RPSS = 300.0; // RPS per second
     public static final double MAX_JERK_RPSSS = 3000.0; // RPS per second per second
     
-    // Current Limits
-    public static final double SUPPLY_CURRENT_LIMIT = 60.0; // Amps
-    public static final double STATOR_CURRENT_LIMIT = 120.0; // Amps
+    // Current Limits (REDUCED TO PREVENT BROWNOUTS)
+    // Flywheel is a high-inertia mechanism - limit current during spinup
+    public static final double SUPPLY_CURRENT_LIMIT = 35.0; // Amps - reduced from 60A
+    public static final double STATOR_CURRENT_LIMIT = 80.0; // Amps - reduced from 120A
     public static final boolean ENABLE_CURRENT_LIMIT = true;
     
     // Motor Configuration

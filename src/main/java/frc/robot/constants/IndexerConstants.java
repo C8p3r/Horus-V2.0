@@ -22,6 +22,11 @@ public final class IndexerConstants {
     public static final double FIRE_MAX_JERK_RPSSS = 4000.0;
     public static final double FIRE_FEED_VELOCITY_RPS = 60.0; // Operating speed
     
+    // Current Limits (prevent brownouts)
+    public static final double SUPPLY_CURRENT_LIMIT = 20.0; // Amps - indexers are light
+    public static final double STATOR_CURRENT_LIMIT = 40.0; // Amps
+    public static final boolean ENABLE_CURRENT_LIMIT = true;
+    
     // Motor Configuration
     public static final boolean FLOOR_INVERTED = false;
     public static final boolean FIRE_INVERTED = true;

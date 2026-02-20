@@ -61,7 +61,7 @@ public class FlywheelSubsystem extends SubsystemBase {
             : InvertedValue.CounterClockwise_Positive;
         config.MotorOutput.NeutralMode = NeutralModeValue.Coast;
         
-        // Current limits
+        // Current Limits (prevent brownouts during shooting)
         config.CurrentLimits.SupplyCurrentLimit = FlywheelConstants.SUPPLY_CURRENT_LIMIT;
         config.CurrentLimits.SupplyCurrentLimitEnable = FlywheelConstants.ENABLE_CURRENT_LIMIT;
         config.CurrentLimits.StatorCurrentLimit = FlywheelConstants.STATOR_CURRENT_LIMIT;

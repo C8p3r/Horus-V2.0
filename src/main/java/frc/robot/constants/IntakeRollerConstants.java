@@ -19,4 +19,9 @@ public final class IntakeRollerConstants {
     
     // Velocity Tolerance
     public static final double VELOCITY_TOLERANCE_RPS = 5.0;
+    
+    // Current Limits (prevent brownouts)
+    public static final double SUPPLY_CURRENT_LIMIT = 25.0; // Amps
+    public static final double STATOR_CURRENT_LIMIT = 40.0; // Amps
+    public static final boolean ENABLE_CURRENT_LIMIT = true;
 }

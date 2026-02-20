@@ -69,6 +69,12 @@ public class IntakeRollerSubsystem extends SubsystemBase {
         slot0.kD = 0.0;
         slot0.kV = 0.12; // Velocity feedforward
         
+        // Current Limits (prevent brownouts)
+        config.CurrentLimits.SupplyCurrentLimit = IntakeRollerConstants.SUPPLY_CURRENT_LIMIT;
+        config.CurrentLimits.SupplyCurrentLimitEnable = IntakeRollerConstants.ENABLE_CURRENT_LIMIT;
+        config.CurrentLimits.StatorCurrentLimit = IntakeRollerConstants.STATOR_CURRENT_LIMIT;
+        config.CurrentLimits.StatorCurrentLimitEnable = IntakeRollerConstants.ENABLE_CURRENT_LIMIT;
+        
         rollerMotor.getConfigurator().apply(config);
         rollerMotor.setPosition(0);
     }
