@@ -97,6 +97,16 @@ public class TurretSubsystem extends SubsystemBase {
     }
     
     /**
+     * Sets the encoder position to a specific angle (for calibration)
+     * Use this when the turret is at a known position (e.g., backwards at 180°)
+     * @param angle The angle to set the encoder to
+     */
+    public void setEncoderPosition(Rotation2d angle) {
+        turretMotor.setPosition(angle.getRotations());
+        targetAngle = angle;
+    }
+    
+    /**
      * Checks if the given angle is within turret limits (50° to 360°)
      * @param angle Angle to check
      * @return True if angle is within limits

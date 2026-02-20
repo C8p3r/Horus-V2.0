@@ -93,15 +93,17 @@ public class RobotContainer {
         // Button to zero turret at current position
         SmartDashboard.putData("Turret: Zero Here", 
             Commands.runOnce(() -> turretSubsystem.zeroTurret(), turretSubsystem)
+                .ignoringDisable(true)
                 .withName("Zero Turret")
         );
         
-        // Button to set turret to 180 degrees
+        // Button to set turret position to 180 degrees (useful if turret is backwards)
         SmartDashboard.putData("Turret: Set to 180°", 
             Commands.runOnce(() -> {
-                turretSubsystem.zeroTurret();
-                turretSubsystem.setTargetAngle(Rotation2d.fromDegrees(180.0));
+                // Set encoder position to 180 degrees (0.5 rotations)
+                turretSubsystem.setEncoderPosition(Rotation2d.fromDegrees(180.0));
             }, turretSubsystem)
+                .ignoringDisable(true)
                 .withName("Set Turret to 180°")
         );
     }
@@ -182,17 +184,22 @@ public class RobotContainer {
     // ==================== SHOOTER CONTROLS ====================
     
     private void configureShooterControls() {
-        // Hood manual adjustment (operator left stick Y)
+        // Hood default command: Manual adjustment OR auto-pack to 0° when idle
         hoodSubsystem.setDefaultCommand(
             Commands.run(() -> {
+                // Check if manually adjusting with joystick
                 double input = -operatorController.getLeftY();
-                if (Math.abs(input) < 0.08) return;
-                
-                double squared = input * input * Math.signum(input);
-                double currentAngle = hoodSubsystem.getAngle().getDegrees();
-                hoodSubsystem.setAngle(Rotation2d.fromDegrees(
-                    currentAngle + squared * 50.0 * 0.02
-                ));
+                if (Math.abs(input) >= 0.08) {
+                    // Manual control - adjust hood
+                    double squared = input * input * Math.signum(input);
+                    double currentAngle = hoodSubsystem.getAngle().getDegrees();
+                    hoodSubsystem.setAngle(Rotation2d.fromDegrees(
+                        currentAngle + squared * 50.0 * 0.02
+                    ));
+                } else {
+                    // No manual input - pack to 0° (this only runs when default command is active)
+                    hoodSubsystem.setAngle(Rotation2d.fromDegrees(0));
+                }
             }, hoodSubsystem)
         );
         
@@ -221,7 +228,8 @@ public class RobotContainer {
                 indexerSubsystem, 
                 turretSubsystem,
                 hoodSubsystem,
-                60.0,
+                intakeRollerSubsystem,
+                40.0,
                 Rotation2d.fromDegrees(355),   // Turret angle: forward
                 Rotation2d.fromDegrees(45)   // Hood angle: 45 degrees
             )
@@ -234,6 +242,7 @@ public class RobotContainer {
                 indexerSubsystem,
                 turretSubsystem,
                 hoodSubsystem,
+                intakeRollerSubsystem,
                 40.0,
                 Rotation2d.fromDegrees(55), // Turret angle: forward
                 Rotation2d.fromDegrees(30)   // Hood angle: 30 degrees
@@ -302,9 +311,73 @@ public class RobotContainer {
     
     // ==================== PERIODIC ====================
     
+    // Flywheel ready state tracking for rumble
+    private boolean lastFlywheelReadyState = false;
+    
+    // Velocity dip detection for orange flash
+    private double lastFlywheelVelocity = 0.0;
+    private static final double VELOCITY_DIP_THRESHOLD = 5; // RPS drop to trigger flash
+    private int orangeFlashCounter = 0;
+    private static final int ORANGE_FLASH_DURATION = 10; // cycles (~200ms)
+    
     public void periodic() {
         controllerTelemetry.periodic();
+        updateVelocityDipDetection();
         updateLEDFeedback();
+        updateControllerRumble();
+    }
+    
+    /**
+     * Detects velocity dips in flywheel (note being shot)
+     */
+    private void updateVelocityDipDetection() {
+        double currentVelocity = flywheelSubsystem.getVelocityRPS();
+        
+        // Only check for dips when flywheel is supposed to be spinning
+        if (flywheelSubsystem.getTargetVelocityRPS() > 0.1) {
+            double velocityDrop = lastFlywheelVelocity - currentVelocity;
+            
+            // Detect significant velocity drop (note shot)
+            if (velocityDrop > VELOCITY_DIP_THRESHOLD && orangeFlashCounter == 0) {
+                orangeFlashCounter = ORANGE_FLASH_DURATION; // Start flash
+            }
+        }
+        
+        // Countdown flash timer
+        if (orangeFlashCounter > 0) {
+            orangeFlashCounter--;
+        }
+        
+        lastFlywheelVelocity = currentVelocity;
+    }
+    
+    /**
+     * Updates controller rumble based on robot state
+     */
+    private void updateControllerRumble() {
+        // Check if flywheel just reached target speed
+        boolean flywheelReady = flywheelSubsystem.atTargetVelocity() 
+                                && flywheelSubsystem.getTargetVelocityRPS() > 0.1;
+        
+        // Trigger rumble when flywheel becomes ready (rising edge)
+        if (flywheelReady && !lastFlywheelReadyState) {
+            // Short rumble burst to indicate ready to shoot
+            joystick.getHID().setRumble(edu.wpi.first.wpilibj.GenericHID.RumbleType.kBothRumble, 1.0);
+            operatorController.getHID().setRumble(edu.wpi.first.wpilibj.GenericHID.RumbleType.kBothRumble, 1.0);
+            
+            // Schedule rumble to stop after 0.3 seconds
+            new Thread(() -> {
+                try {
+                    Thread.sleep(300);
+                    joystick.getHID().setRumble(edu.wpi.first.wpilibj.GenericHID.RumbleType.kBothRumble, 0.0);
+                    operatorController.getHID().setRumble(edu.wpi.first.wpilibj.GenericHID.RumbleType.kBothRumble, 0.0);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }).start();
+        }
+        
+        lastFlywheelReadyState = flywheelReady;
     }
     
     // ==================== LED FEEDBACK ====================
@@ -317,6 +390,12 @@ public class RobotContainer {
         // CRITICAL OVERRIDE: Flywheel overheating - rapid red blink
         if (flywheelSubsystem.isOverheating()) {
             candleSubsystem.setRapidRedBlink();
+            return;
+        }
+        
+        // HIGH PRIORITY: Velocity dip detected - orange flash (note scored!)
+        if (orangeFlashCounter > 0) {
+            candleSubsystem.setRGB(255, 165, 0); // Bright orange flash
             return;
         }
         
