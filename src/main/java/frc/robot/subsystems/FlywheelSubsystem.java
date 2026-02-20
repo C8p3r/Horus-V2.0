@@ -1,5 +1,6 @@
 package frc.robot.subsystems;
 
+import com.ctre.phoenix6.StatusSignal;
 import com.ctre.phoenix6.configs.MotionMagicConfigs;
 import com.ctre.phoenix6.configs.Slot0Configs;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
@@ -22,6 +23,13 @@ public class FlywheelSubsystem extends SubsystemBase {
     private final MotionMagicVelocityVoltage velocityRequest;
     private final NeutralOut neutralRequest;
     
+    // Cached status signals for performance
+    private final StatusSignal<?> velocitySignal;
+    private final StatusSignal<?> temperatureSignal;
+    
+    // Temperature threshold for overheating (Celsius)
+    private static final double OVERHEAT_TEMPERATURE_C = 80.0;
+    
     private double targetVelocityRPS = 0.0;
     
     public FlywheelSubsystem() {
@@ -29,6 +37,15 @@ public class FlywheelSubsystem extends SubsystemBase {
         
         // Configure motor
         configureFlywheel();
+        
+        // Initialize cached status signals
+        velocitySignal = flywheelMotor.getVelocity();
+        velocitySignal.setUpdateFrequency(50); // 50Hz
+        
+        temperatureSignal = flywheelMotor.getDeviceTemp();
+        temperatureSignal.setUpdateFrequency(4); // 4Hz (temperature changes slowly)
+        
+        flywheelMotor.optimizeBusUtilization();
         
         // Initialize control requests
         velocityRequest = new MotionMagicVelocityVoltage(0).withSlot(0);
@@ -85,7 +102,7 @@ public class FlywheelSubsystem extends SubsystemBase {
      * @return Current velocity in RPS
      */
     public double getVelocityRPS() {
-        return flywheelMotor.getVelocity().getValueAsDouble();
+        return velocitySignal.getValueAsDouble();
     }
     
     /**
@@ -113,14 +130,44 @@ public class FlywheelSubsystem extends SubsystemBase {
         flywheelMotor.setControl(neutralRequest);
     }
     
+    /**
+     * Get current motor temperature in Celsius
+     * @return Temperature in degrees Celsius
+     */
+    public double getTemperatureCelsius() {
+        return temperatureSignal.getValueAsDouble();
+    }
+    
+    /**
+     * Check if flywheel motor is overheating
+     * @return True if temperature exceeds threshold
+     */
+    public boolean isOverheating() {
+        return getTemperatureCelsius() >= OVERHEAT_TEMPERATURE_C;
+    }
+    
+    // Telemetry counter for throttling
+    private int telemetryCounter = 10; // Start at offset for staggering
+    private static final int TELEMETRY_UPDATE_PERIOD = 25; // Update every 25 cycles (500ms)
+    
     @Override
     public void periodic() {
         // Update motor control
         flywheelMotor.setControl(velocityRequest.withVelocity(targetVelocityRPS));
         
-        // Telemetry
-        SmartDashboard.putNumber("Flywheel/Velocity RPS", getVelocityRPS());
-        SmartDashboard.putNumber("Flywheel/Target RPS", targetVelocityRPS);
-        SmartDashboard.putBoolean("Flywheel/At Target", atTargetVelocity());
+        // Refresh cached signals
+        velocitySignal.refresh();
+        temperatureSignal.refresh();
+        
+        // Throttle telemetry for performance
+        telemetryCounter++;
+        if (telemetryCounter >= TELEMETRY_UPDATE_PERIOD) {
+            telemetryCounter = 0;
+            SmartDashboard.putNumber("Flywheel/Velocity RPS", getVelocityRPS());
+            SmartDashboard.putNumber("Flywheel/Target RPS", targetVelocityRPS);
+            SmartDashboard.putBoolean("Flywheel/At Target", atTargetVelocity());
+            SmartDashboard.putNumber("Flywheel/Temperature °C", Math.round(getTemperatureCelsius() * 10.0) / 10.0);
+            SmartDashboard.putBoolean("Flywheel/OVERHEATING", isOverheating());
+        }
     }
 }

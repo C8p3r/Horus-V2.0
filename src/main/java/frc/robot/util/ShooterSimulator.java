@@ -19,6 +19,7 @@ public class ShooterSimulator {
     /**
      * Result of a trajectory simulation
      */
+    
     public static class TrajectoryResult {
         public final double flightTime;        // Time to reach target (seconds)
         public final double maxHeight;         // Maximum height reached (meters)

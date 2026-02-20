@@ -1,7 +1,3 @@
-// Copyright (c) FIRST and other WPILib contributors.
-// Open Source Software; you can modify and/or share it under the terms of
-// the WPILib BSD license file in the root directory of this project.
-
 package frc.robot;
 
 import static edu.wpi.first.units.Units.*;
@@ -10,6 +6,8 @@ import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
@@ -17,249 +15,338 @@ import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
 
 import frc.robot.generated.TunerConstants;
-import frc.robot.subsystems.CommandSwerveDrivetrain;
-import frc.robot.subsystems.IndexerSubsystem;
-import frc.robot.subsystems.IntakeSubsystem;
-import frc.robot.subsystems.PathPlannerSubsystem;
-
-import frc.robot.subsystems.FlywheelSubsystem;
-import frc.robot.subsystems.HoodSubsystem;
-import frc.robot.subsystems.TurretSubsystem;
-import frc.robot.subsystems.VisionSubsystem;
+import frc.robot.subsystems.*;
+import frc.robot.commands.*;
 import frc.robot.util.ControllerTelemetry;
 import frc.robot.util.FuelSim;
 
 public class RobotContainer {
-    private double MaxSpeed = 1.0 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
-    private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
-
-    // ==================== CONTROL SCHEME TOGGLE ====================
-    // Set to true to disable the intake deploy motor (for testing - saves wear and tear)
-    // When disabled, intake roller still works but deploy/retract commands are ignored
-    private static final boolean DISABLE_INTAKE_DEPLOY_MOTOR = true;  // Change to true for testing
     
-    /* Setting up bindings for necessary control of the swerve drive platform */
+    // ==================== CONSTANTS ====================
+    private static final boolean DISABLE_INTAKE_DEPLOY_MOTOR = true;
+    
+    private final double maxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
+    private final double maxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond);
+    
+    // ==================== SWERVE REQUESTS ====================
     private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric()
-            .withDeadband(MaxSpeed * 0.1).withRotationalDeadband(MaxAngularRate * 0.1) // Add a 10% deadband
-            .withDriveRequestType(DriveRequestType.OpenLoopVoltage); // Use open-loop control for drive motors
+            .withDeadband(maxSpeed * 0.1)
+            .withRotationalDeadband(maxAngularRate * 0.1)
+            .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
     private final SwerveRequest.SwerveDriveBrake brake = new SwerveRequest.SwerveDriveBrake();
     private final SwerveRequest.PointWheelsAt point = new SwerveRequest.PointWheelsAt();
-
-    private final Telemetry logger = new Telemetry(MaxSpeed);
-
+    private final SwerveRequest.Idle idle = new SwerveRequest.Idle();
+    
+    // ==================== TELEMETRY ====================
+    private final Telemetry logger = new Telemetry(maxSpeed);
+    
+    // ==================== CONTROLLERS ====================
     private final CommandXboxController joystick = new CommandXboxController(0);
     private final CommandXboxController operatorController = new CommandXboxController(1);
-
+    
+    // ==================== SUBSYSTEMS ====================
+    // Drivetrain
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
     
-    // Vision subsystem with dual Limelights for field localization
+    // Vision & Autonomous
     private final VisionSubsystem visionSubsystem = new VisionSubsystem(drivetrain);
-    
-    // PathPlanner subsystem for autonomous and on-the-fly pathing
     private final PathPlannerSubsystem pathPlannerSubsystem = new PathPlannerSubsystem(drivetrain);
     
-    // Shooter subsystems - streamlined hardware control
+    // Shooter
     private final TurretSubsystem turretSubsystem = new TurretSubsystem();
     private final FlywheelSubsystem flywheelSubsystem = new FlywheelSubsystem();
     private final HoodSubsystem hoodSubsystem = new HoodSubsystem();
     
-    // Intake and indexer subsystems for fuel handling
-    private final IntakeSubsystem intakeSubsystem = new IntakeSubsystem();
+    // Intake & Indexer
+    private final IntakeRollerSubsystem intakeRollerSubsystem = new IntakeRollerSubsystem();
+    private final IntakePositionSubsystem intakePositionSubsystem = new IntakePositionSubsystem();
     private final IndexerSubsystem indexerSubsystem = new IndexerSubsystem();
     
-    // Controller telemetry for debugging
+    // LEDs
+    private final CANdleSubsystem candleSubsystem = new CANdleSubsystem();
+    
+    // Utilities
     private final ControllerTelemetry controllerTelemetry;
+    
+    // ==================== AUTONOMOUS CHOOSER ====================
+    private final SendableChooser<Command> autoChooser = new SendableChooser<>();
 
     public RobotContainer() {
-        // Initialize controller telemetry
         controllerTelemetry = new ControllerTelemetry(joystick);
         
-        // Apply intake deploy motor toggle setting
         if (DISABLE_INTAKE_DEPLOY_MOTOR) {
-            intakeSubsystem.disableDeployMotor();
+            intakePositionSubsystem.disableDeployMotor();
         }
         
-        // Set up field-oriented targeting for turret (always active)
-        turretSubsystem.setPoseSupplier(() -> drivetrain.getState().Pose);
-        
         configureFuelSim();
+        configureAutoChooser();
+        configureTurretCalibrationButtons();
         configureBindings();
     }
-
-    private void configureFuelSim() {
-        // Initialize FuelSim with robot parameters (only in simulation)
-        FuelSim.getInstance().registerRobot(
-            0.76,  // Robot width in meters (30 inches with bumpers)
-            0.76,  // Robot length in meters (30 inches with bumpers)
-            0.30,  // Bumper height in meters (~12 inches)
-            () -> drivetrain.getState().Pose,  // Robot pose supplier
-            () -> drivetrain.getState().Speeds  // Field-relative speeds supplier (note capital S)
+    
+    // ==================== CONFIGURATION ====================
+    
+    /**
+     * Publishes turret calibration buttons to SmartDashboard
+     */
+    private void configureTurretCalibrationButtons() {
+        // Button to zero turret at current position
+        SmartDashboard.putData("Turret: Zero Here", 
+            Commands.runOnce(() -> turretSubsystem.zeroTurret(), turretSubsystem)
+                .withName("Zero Turret")
         );
         
-        // Start FuelSim
+        // Button to set turret to 180 degrees
+        SmartDashboard.putData("Turret: Set to 180°", 
+            Commands.runOnce(() -> {
+                turretSubsystem.zeroTurret();
+                turretSubsystem.setTargetAngle(Rotation2d.fromDegrees(180.0));
+            }, turretSubsystem)
+                .withName("Set Turret to 180°")
+        );
+    }
+    
+    private void configureFuelSim() {
+        FuelSim.getInstance().registerRobot(
+            0.76,  // Robot width (meters)
+            0.76,  // Robot length (meters)
+            0.30,  // Bumper height (meters)
+            () -> drivetrain.getState().Pose,
+            () -> drivetrain.getState().Speeds
+        );
         FuelSim.getInstance().start();
     }
 
     private void configureBindings() {
-        // Note that X is defined as forward according to WPILib convention,
-        // and Y is defined as to the left according to WPILib convention.
+        configureDrivetrainControls();
+        configureShooterControls();
+        configureIntakeControls();
+        configureVisionControls();
+        configurePathPlannerControls();
+    }
+    
+    // ==================== DRIVETRAIN CONTROLS ====================
+    
+    private void configureDrivetrainControls() {
+        // Default command: field-centric drive
         drivetrain.setDefaultCommand(
-            // Drivetrain will execute this command periodically
             drivetrain.applyRequest(() ->
-                drive.withVelocityX(-joystick.getLeftY() * MaxSpeed) // Drive forward with negative Y (forward)
-                    .withVelocityY(-joystick.getLeftX() * MaxSpeed) // Drive left with negative X (left)
-                    .withRotationalRate(-joystick.getRightX() * MaxAngularRate) // Drive counterclockwise with negative X (left)
+                drive.withVelocityX(-joystick.getLeftY() * maxSpeed)
+                    .withVelocityY(-joystick.getLeftX() * maxSpeed)
+                    .withRotationalRate(-joystick.getRightX() * maxAngularRate)
             )
         );
 
-        // Idle while the robot is disabled. This ensures the configured
-        // neutral mode is applied to the drive motors while disabled.
-        final var idle = new SwerveRequest.Idle();
+        // Idle while disabled
         RobotModeTriggers.disabled().whileTrue(
             drivetrain.applyRequest(() -> idle).ignoringDisable(true)
         );
 
+        // A button: X-brake
         joystick.a().whileTrue(drivetrain.applyRequest(() -> brake));
+        
+        // B button: Point wheels at joystick direction
         joystick.b().whileTrue(drivetrain.applyRequest(() ->
             point.withModuleDirection(new Rotation2d(-joystick.getLeftY(), -joystick.getLeftX()))
         ));
 
-        // Run SysId routines when holding back/start and X/Y.
-        // Note that each routine should be run exactly once in a single log.
+        // SysId routines (back/start + X/Y)
         joystick.back().and(joystick.y()).whileTrue(drivetrain.sysIdDynamic(Direction.kForward));
         joystick.back().and(joystick.x()).whileTrue(drivetrain.sysIdDynamic(Direction.kReverse));
         joystick.start().and(joystick.y()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kForward));
         joystick.start().and(joystick.x()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kReverse));
 
-        // Reset the field-centric heading on left bumper press.
-        joystick.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
+        drivetrain.registerTelemetry(logger::telemeterize);
+    }
+    
+    // ==================== VISION CONTROLS ====================
+    
+    private void configureVisionControls() {
+        // Left bumper (operator): Reset field-centric heading
+        operatorController.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
         
-        // Toggle vision processing with right bumper
-        joystick.rightBumper().onTrue(Commands.runOnce(() -> visionSubsystem.toggleVision()));
-        
-        // ==================== SHOOTING CONTROL SCHEMES ====================
-        // NOTE: On-the-fly shooting subsystem has been converted to simulation utilities.
-        // For hardware control, use the individual FlywheelSubsystem, HoodSubsystem, and TurretSubsystem directly.
-        // For trajectory calculations, use OnTheFlyCalculator and ShooterSimulator in util package.
-        
-        // TODO: Implement new shooting control using streamlined subsystems
-        // Example:
-        // joystick.rightTrigger().whileTrue(Commands.run(() -> {
-        //     // Use OnTheFlyCalculator to get shooting solution
-        //     // Set flywheel, hood, and turret to calculated values
-        // }));
-        
-        // CLIMB PATHS - D-pad for pathfinding to climb positions
-        // Right D-pad (90°) - Pathfind then follow "Far Climb"
+        // Right bumper (operator): Toggle vision processing
+        operatorController.rightBumper().onTrue(Commands.runOnce(() -> visionSubsystem.toggleVision()));
+    }
+    
+    // ==================== PATH PLANNER CONTROLS ====================
+    
+    private void configurePathPlannerControls() {
+        // D-pad left: Pathfind to "Far Climb"
         joystick.povLeft().onTrue(pathPlannerSubsystem.pathfindThenFollowPath("Far Climb"));
         
-        // Left D-pad (270°) - Pathfind then follow "Close Climb"
+        // D-pad right: Pathfind to "Close Climb"
         joystick.povRight().onTrue(pathPlannerSubsystem.pathfindThenFollowPath("Close Climb"));
-        
-        // ==================== OPERATOR MANUAL ADJUSTMENT CONTROLS ====================
-        // Operator controller (port 1) for manual hood and turret adjustment
-        // Left stick Y-axis - Hood angle control (up = increase angle, down = decrease angle)
-        // Right stick X-axis - Turret angle control (right = clockwise, left = counterclockwise)
-        
-        // Hood manual adjustment with left stick Y-axis (continuous while held)
-        // Rate: 50 degrees per second with squared input curve for smooth, precise control
+    }
+    
+    // ==================== SHOOTER CONTROLS ====================
+    
+    private void configureShooterControls() {
+        // Hood manual adjustment (operator left stick Y)
         hoodSubsystem.setDefaultCommand(
             Commands.run(() -> {
-                double leftY = -operatorController.getLeftY(); // Negative because Y is inverted
+                double input = -operatorController.getLeftY();
+                if (Math.abs(input) < 0.08) return;
                 
-                // Apply deadband
-                if (Math.abs(leftY) < 0.08) {
-                    leftY = 0.0;
-                }
-                
-                // Square the input while preserving sign for smoother control
-                double sign = Math.signum(leftY);
-                double squared = leftY * leftY * sign;
-                
-                // Apply rate (50 deg/sec * squared input * 20ms period)
+                double squared = input * input * Math.signum(input);
                 double currentAngle = hoodSubsystem.getAngle().getDegrees();
-                hoodSubsystem.setAngle(edu.wpi.first.math.geometry.Rotation2d.fromDegrees(
+                hoodSubsystem.setAngle(Rotation2d.fromDegrees(
                     currentAngle + squared * 50.0 * 0.02
                 ));
             }, hoodSubsystem)
         );
         
-        // Turret manual adjustment with right stick X-axis (continuous while held)
-        // Sets field-oriented heading target that is maintained by stabilization
-        // Rate: 180 degrees per second with squared input curve for smooth, responsive control
+        // Turret manual adjustment (operator right stick X)
         turretSubsystem.setDefaultCommand(
             Commands.run(() -> {
-                double rightX = operatorController.getRightX();
+                double input = operatorController.getRightX();
+                if (Math.abs(input) < 0.08) return;
                 
-                // Apply deadband
-                if (Math.abs(rightX) < 0.08) {
-                    rightX = 0.0;
-                }
-                
-                // Square the input while preserving sign for smoother control
-                double sign = Math.signum(rightX);
-                double squared = rightX * rightX * sign;
-                
-                // Apply rate (180 deg/sec * squared input * 20ms period)
-                // Adjusts field-oriented target - turret will maintain this heading
-                turretSubsystem.adjustFieldOrientedTarget(squared * 180.0 * 0.02);
+                double squared = input * input * Math.signum(input);
+                Rotation2d currentAngle = turretSubsystem.getCurrentAngle();
+                Rotation2d adjustment = Rotation2d.fromDegrees(squared * 180.0 * 0.02);
+                turretSubsystem.setTargetAngle(currentAngle.plus(adjustment));
             }, turretSubsystem)
         );
-
-        drivetrain.registerTelemetry(logger::telemeterize);
-    }
-
-    /**
-     * Gets the autonomous command.
-     * Uses PathPlanner autonomous if available, otherwise falls back to simple drive forward.
-     * 
-     * To use PathPlanner autos:
-     * 1. Create autonomous routines in PathPlanner GUI
-     * 2. Save them to src/main/deploy/pathplanner/autos/
-     * 3. Update this method to load your desired auto by name
-     * 
-     * @return The autonomous command
-     */
-    public Command getAutonomousCommand() {
-        // OPTION 1: Use PathPlanner autonomous
-        // Uncomment and specify your auto name:
-        // return pathPlannerSubsystem.getAutonomousCommand("YourAutoName");
         
-        // OPTION 2: Use a specific PathPlanner path
-        // return pathPlannerSubsystem.followPath("YourPathName");
+        // Operator A button: Zero turret to current position
+        operatorController.a().onTrue(
+            Commands.runOnce(() -> turretSubsystem.zeroTurret(), turretSubsystem)
+        );
         
-        // OPTION 3: Fallback - simple drive forward
-        final var idle = new SwerveRequest.Idle();
-        return Commands.sequence(
-            // Reset our field centric heading to match the robot
-            // facing away from our alliance station wall (0 deg).
-            drivetrain.runOnce(() -> drivetrain.seedFieldCentric(Rotation2d.kZero)),
-            // Then slowly drive forward (away from us) for 5 seconds.
-            drivetrain.applyRequest(() ->
-                drive.withVelocityX(0.5)
-                    .withVelocityY(0)
-                    .withRotationalRate(0)
+        // Right trigger: Shoot at 60 RPS with turret/hood angles (while held)
+        joystick.rightTrigger().whileTrue(
+            ShootCommand.shootContinuous(
+                flywheelSubsystem, 
+                indexerSubsystem, 
+                turretSubsystem,
+                hoodSubsystem,
+                60.0,
+                Rotation2d.fromDegrees(355),   // Turret angle: forward
+                Rotation2d.fromDegrees(45)   // Hood angle: 45 degrees
             )
-            .withTimeout(5.0),
-            // Finally idle for the rest of auton
-            drivetrain.applyRequest(() -> idle)
+        );
+        
+        // Left trigger: Shoot at 40 RPS with turret/hood angles (while held)
+        joystick.leftTrigger().whileTrue(
+            ShootCommand.shootContinuous(
+                flywheelSubsystem, 
+                indexerSubsystem,
+                turretSubsystem,
+                hoodSubsystem,
+                40.0,
+                Rotation2d.fromDegrees(55), // Turret angle: forward
+                Rotation2d.fromDegrees(30)   // Hood angle: 30 degrees
+            )
         );
     }
     
+    // ==================== INTAKE CONTROLS ====================
+    
+    private void configureIntakeControls() {
+        // Right bumper (driver): Intake (while held)
+        joystick.rightBumper().whileTrue(
+            IntakeCommand.intake(intakeRollerSubsystem, intakePositionSubsystem, indexerSubsystem)
+        );
+        
+        // Left bumper (driver): Eject (while held)
+        joystick.leftBumper().whileTrue(
+            IntakeCommand.eject(intakeRollerSubsystem, indexerSubsystem)
+        );
+    }
+    
+    // ==================== AUTONOMOUS ====================
+    
     /**
-     * Gets the PathPlanner subsystem for use in other commands
-     * 
-     * @return The PathPlanner subsystem
+     * Configures the autonomous chooser with PathPlanner auto routines
      */
+    private void configureAutoChooser() {
+        // Default option: Do nothing
+        autoChooser.setDefaultOption("None", Commands.none());
+        
+        // PathPlanner auto routines (from deploy/pathplanner/autos/*.auto files)
+        autoChooser.addOption("Example Auto", pathPlannerSubsystem.getAutonomousCommand("Example Auto"));
+        
+        // Add more PathPlanner autos here as you create them:
+        // autoChooser.addOption("4 Note Auto", pathPlannerSubsystem.getAutonomousCommand("4 Note Auto"));
+        // autoChooser.addOption("3 Note Center", pathPlannerSubsystem.getAutonomousCommand("3 Note Center"));
+        // autoChooser.addOption("2 Note Amp Side", pathPlannerSubsystem.getAutonomousCommand("2 Note Amp Side"));
+        
+        // Simple test auto
+        autoChooser.addOption("Drive Forward", 
+            Commands.sequence(
+                drivetrain.runOnce(() -> drivetrain.seedFieldCentric(Rotation2d.kZero)),
+                drivetrain.applyRequest(() ->
+                    drive.withVelocityX(0.5)
+                        .withVelocityY(0)
+                        .withRotationalRate(0)
+                ).withTimeout(3.0),
+                drivetrain.applyRequest(() -> idle)
+            )
+        );
+        
+        // Put chooser on SmartDashboard
+        SmartDashboard.putData("Auto Chooser", autoChooser);
+    }
+    
+    public Command getAutonomousCommand() {
+        // Return the selected autonomous command from the chooser
+        return autoChooser.getSelected();
+    }
+    
+    // ==================== GETTERS ====================
+    
     public PathPlannerSubsystem getPathPlannerSubsystem() {
         return pathPlannerSubsystem;
     }
     
-    /**
-     * Called periodically to update telemetry systems.
-     * Should be called from Robot.robotPeriodic()
-     */
+    // ==================== PERIODIC ====================
+    
     public void periodic() {
         controllerTelemetry.periodic();
+        updateLEDFeedback();
+    }
+    
+    // ==================== LED FEEDBACK ====================
+    
+    /**
+     * Updates LED colors based on robot state
+     * Provides visual feedback for shooting, intake, and other states
+     */
+    private void updateLEDFeedback() {
+        // CRITICAL OVERRIDE: Flywheel overheating - rapid red blink
+        if (flywheelSubsystem.isOverheating()) {
+            candleSubsystem.setRapidRedBlink();
+            return;
+        }
+        
+        // Priority 1: Shooting state (highest priority)
+        if (flywheelSubsystem.getTargetVelocityRPS() > 0.1) {
+            if (flywheelSubsystem.atTargetVelocity()) {
+                // Flywheel ready - bright pulsing green (fast pulse = ready to shoot!)
+                candleSubsystem.setRGBWithModulation(0, 255, 0, 3.0, 0.6, 1.0);
+            } else {
+                // Flywheel spinning up - breathing yellow (slower = wait)
+                candleSubsystem.setRGBWithModulation(255, 255, 0, 1.5, 0.4, 0.9);
+            }
+            return;
+        }
+        
+        // Priority 2: Intake running (check if velocity is non-zero)
+        if (Math.abs(intakeRollerSubsystem.getVelocity()) > 1.0) {
+            // Intake active - pulsing blue
+            candleSubsystem.setRGBWithModulation(0, 0, 255, 2.5, 0.5, 1.0);
+            return;
+        }
+        
+        // Priority 3: Aiming (check if turret/hood are at target positions)
+        if (turretSubsystem.atTarget() && hoodSubsystem.atTargetAngle()) {
+            // Aimed and ready - bright pulsing purple
+            candleSubsystem.setRGBWithModulation(128, 0, 255, 2.0, 0.7, 1.0);
+            return;
+        }
+        
+        // Default: Robot idle - slow breathing dim white
+        candleSubsystem.setRGBWithModulation(80, 80, 80, 0.5, 0.1, 0.3);
     }
 }

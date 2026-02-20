@@ -26,6 +26,11 @@ public class ControllerTelemetry {
     private final boolean enableLogging;
     private final NetworkTable controllersTable;
     
+    // Performance optimization - throttle telemetry updates
+    private static final int TELEMETRY_UPDATE_PERIOD = 25; // Update every 25 cycles (500ms)
+    private static final int TELEMETRY_OFFSET = 20; // Stagger: update on cycles 20, 45, 70...
+    private int telemetryCounter = TELEMETRY_OFFSET; // Start at offset
+    
     /**
      * Creates a ControllerTelemetry instance with driver and operator controllers.
      * 
@@ -62,11 +67,21 @@ public class ControllerTelemetry {
     /**
      * Publishes all controller inputs to NetworkTables.
      * Call this method periodically (e.g., in robotPeriodic or a subsystem's periodic).
+     * 
+     * NOTE: Throttled to update every 100ms for performance optimization.
+     * Controller telemetry does not need 50Hz updates for debugging purposes.
      */
     public void periodic() {
         if (!enableLogging) {
             return;
         }
+        
+        // Throttle telemetry updates for performance
+        telemetryCounter++;
+        if (telemetryCounter < TELEMETRY_UPDATE_PERIOD) {
+            return;
+        }
+        telemetryCounter = 0;
         
         // Log driver controller
         if (driverController != null) {
@@ -87,9 +102,8 @@ public class ControllerTelemetry {
      */
     private void logController(String prefix, CommandXboxController controller) {
         String logPath = "Controllers/" + prefix + "/";
-        NetworkTable controllerTable = controllersTable.getSubTable(prefix);
         
-        // Buttons
+        // Buttons - only use Logger, it already publishes to NetworkTables
         Logger.recordOutput(logPath + "Buttons/A", controller.a().getAsBoolean());
         Logger.recordOutput(logPath + "Buttons/B", controller.b().getAsBoolean());
         Logger.recordOutput(logPath + "Buttons/X", controller.x().getAsBoolean());
@@ -101,24 +115,9 @@ public class ControllerTelemetry {
         Logger.recordOutput(logPath + "Buttons/LeftStick", controller.leftStick().getAsBoolean());
         Logger.recordOutput(logPath + "Buttons/RightStick", controller.rightStick().getAsBoolean());
         
-        // Direct NT publishing for buttons
-        controllerTable.getSubTable("Buttons").getEntry("A").setBoolean(controller.a().getAsBoolean());
-        controllerTable.getSubTable("Buttons").getEntry("B").setBoolean(controller.b().getAsBoolean());
-        controllerTable.getSubTable("Buttons").getEntry("X").setBoolean(controller.x().getAsBoolean());
-        controllerTable.getSubTable("Buttons").getEntry("Y").setBoolean(controller.y().getAsBoolean());
-        controllerTable.getSubTable("Buttons").getEntry("LeftBumper").setBoolean(controller.leftBumper().getAsBoolean());
-        controllerTable.getSubTable("Buttons").getEntry("RightBumper").setBoolean(controller.rightBumper().getAsBoolean());
-        controllerTable.getSubTable("Buttons").getEntry("Back").setBoolean(controller.back().getAsBoolean());
-        controllerTable.getSubTable("Buttons").getEntry("Start").setBoolean(controller.start().getAsBoolean());
-        controllerTable.getSubTable("Buttons").getEntry("LeftStick").setBoolean(controller.leftStick().getAsBoolean());
-        controllerTable.getSubTable("Buttons").getEntry("RightStick").setBoolean(controller.rightStick().getAsBoolean());
-        
         // Triggers (analog values 0.0 to 1.0)
         Logger.recordOutput(logPath + "Triggers/Left", controller.getLeftTriggerAxis());
         Logger.recordOutput(logPath + "Triggers/Right", controller.getRightTriggerAxis());
-        
-        controllerTable.getSubTable("Triggers").getEntry("Left").setDouble(controller.getLeftTriggerAxis());
-        controllerTable.getSubTable("Triggers").getEntry("Right").setDouble(controller.getRightTriggerAxis());
         
         // Left stick
         double leftX = controller.getLeftX();
@@ -129,10 +128,6 @@ public class ControllerTelemetry {
         Logger.recordOutput(logPath + "LeftStick/Y", leftY);
         Logger.recordOutput(logPath + "LeftStick/Magnitude", leftMag);
         
-        controllerTable.getSubTable("LeftStick").getEntry("X").setDouble(leftX);
-        controllerTable.getSubTable("LeftStick").getEntry("Y").setDouble(leftY);
-        controllerTable.getSubTable("LeftStick").getEntry("Magnitude").setDouble(leftMag);
-        
         // Right stick
         double rightX = controller.getRightX();
         double rightY = controller.getRightY();
@@ -142,10 +137,6 @@ public class ControllerTelemetry {
         Logger.recordOutput(logPath + "RightStick/Y", rightY);
         Logger.recordOutput(logPath + "RightStick/Magnitude", rightMag);
         
-        controllerTable.getSubTable("RightStick").getEntry("X").setDouble(rightX);
-        controllerTable.getSubTable("RightStick").getEntry("Y").setDouble(rightY);
-        controllerTable.getSubTable("RightStick").getEntry("Magnitude").setDouble(rightMag);
-        
         // POV (D-Pad) - returns angle in degrees, -1 if not pressed
         int povAngle = controller.getHID().getPOV();
         Logger.recordOutput(logPath + "POV/Angle", povAngle);
@@ -153,12 +144,6 @@ public class ControllerTelemetry {
         Logger.recordOutput(logPath + "POV/Right", controller.pov(90).getAsBoolean());
         Logger.recordOutput(logPath + "POV/Down", controller.pov(180).getAsBoolean());
         Logger.recordOutput(logPath + "POV/Left", controller.pov(270).getAsBoolean());
-        
-        controllerTable.getSubTable("POV").getEntry("Angle").setDouble(povAngle);
-        controllerTable.getSubTable("POV").getEntry("Up").setBoolean(controller.pov(0).getAsBoolean());
-        controllerTable.getSubTable("POV").getEntry("Right").setBoolean(controller.pov(90).getAsBoolean());
-        controllerTable.getSubTable("POV").getEntry("Down").setBoolean(controller.pov(180).getAsBoolean());
-        controllerTable.getSubTable("POV").getEntry("Left").setBoolean(controller.pov(270).getAsBoolean());
     }
     
     /**

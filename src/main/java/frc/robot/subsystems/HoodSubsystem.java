@@ -153,9 +153,8 @@ public class HoodSubsystem extends SubsystemBase {
         // Update motor control
         hoodMotor.setControl(positionRequest.withPosition(targetAngle.getRotations()));
         
-        // Telemetry
-        SmartDashboard.putNumber("Hood/Angle Degrees", getAngleDegrees());
-        SmartDashboard.putNumber("Hood/Target Degrees", targetAngle.getDegrees());
-        SmartDashboard.putBoolean("Hood/At Target", atTargetAngle());
+        // Telemetry - angles rounded to 0.1 degree
+        SmartDashboard.putNumber("Hood/Angle Degrees", Math.round(getAngleDegrees() * 10.0) / 10.0);
+        SmartDashboard.putNumber("Hood/Target Degrees", Math.round(targetAngle.getDegrees() * 10.0) / 10.0);
     }
 }

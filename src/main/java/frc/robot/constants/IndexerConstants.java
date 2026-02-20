@@ -24,5 +24,5 @@ public final class IndexerConstants {
     
     // Motor Configuration
     public static final boolean FLOOR_INVERTED = false;
-    public static final boolean FIRE_INVERTED = false;
+    public static final boolean FIRE_INVERTED = true;
 }

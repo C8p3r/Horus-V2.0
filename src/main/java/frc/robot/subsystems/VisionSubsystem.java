@@ -15,6 +15,7 @@ import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import frc.robot.constants.VisionConstants;
+import frc.robot.util.LimelightHelpers;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,11 +28,19 @@ import java.util.Optional;
  */
 public class VisionSubsystem extends SubsystemBase {
     
+    // Performance tuning constants
+    private static final int TELEMETRY_UPDATE_PERIOD = 25; // Update telemetry every 25 cycles (500ms)
+    private static final int POSE_PUBLISH_PERIOD = 5; // Publish poses every 5 cycles (100ms) - more frequent for visualization
+    
     private final CommandSwerveDrivetrain drivetrain;
     private final String frontLimelightName;
     private final String backLimelightName;
     
     private boolean useVision = true;
+    
+    // Telemetry throttling with staggered offsets
+    private int telemetryCounter = 15; // Staggered offset
+    private int posePublishCounter = 0;
     
     // NetworkTables publishers for AdvantageScope
     private final StructPublisher<Pose2d> frontVisionPosePublisher;
@@ -118,10 +127,6 @@ public class VisionSubsystem extends SubsystemBase {
     
     @Override
     public void periodic() {
-        // Always update telemetry and publish poses for visualization
-        updateTelemetry();
-        publishVisionPoses();
-        
         // Only process measurements if vision is enabled
         if (!useVision) {
             return;
@@ -132,6 +137,20 @@ public class VisionSubsystem extends SubsystemBase {
         
         // Process back Limelight
         processLimelightMeasurement(backLimelightName);
+        
+        // Throttle telemetry updates for performance (200ms)
+        telemetryCounter++;
+        if (telemetryCounter >= TELEMETRY_UPDATE_PERIOD) {
+            telemetryCounter = 0;
+            updateTelemetry();
+        }
+        
+        // Throttle pose publishing (40ms) - less critical than measurements
+        posePublishCounter++;
+        if (posePublishCounter >= POSE_PUBLISH_PERIOD) {
+            posePublishCounter = 0;
+            publishVisionPoses();
+        }
     }
     
     /**
