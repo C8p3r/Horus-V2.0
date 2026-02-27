@@ -26,23 +26,27 @@ public class Robot extends LoggedRobot {
 
     public Robot() {
         // Initialize AdvantageKit Logger
-        Logger.recordMetadata("ProjectName", "Horus-2026");
-        Logger.recordMetadata("RobotName", "Horus");
-        
-        if (isReal()) {
-            // Running on real robot - log to USB stick and publish to NetworkTables
-            Logger.addDataReceiver(new WPILOGWriter()); // Log to USB
-            Logger.addDataReceiver(new NT4Publisher()); // Publish to NetworkTables for AdvantageScope
-        } else {
-            // Running in simulation - only publish to NetworkTables
-            Logger.addDataReceiver(new NT4Publisher());
+        if (!RobotContainer.DISABLE_ALL_TELEMETRY) {
+            Logger.recordMetadata("ProjectName", "Horus-2026");
+            Logger.recordMetadata("RobotName", "Horus");
+            
+            if (isReal()) {
+                // Running on real robot - log to USB stick and publish to NetworkTables
+                Logger.addDataReceiver(new WPILOGWriter()); // Log to USB
+                Logger.addDataReceiver(new NT4Publisher()); // Publish to NetworkTables for AdvantageScope
+            } else {
+                // Running in simulation - only publish to NetworkTables
+                Logger.addDataReceiver(new NT4Publisher());
+            }
+            
+            // Start logging
+            Logger.start();
         }
         
-        // Start logging
-        Logger.start();
-        
         // Publish target positions to NetworkTables for easy tuning
-        frc.robot.constants.FieldConstants.publishToNetworkTables();
+        if (!RobotContainer.DISABLE_ALL_TELEMETRY) {
+            frc.robot.constants.FieldConstants.publishToNetworkTables();
+        }
         
         m_robotContainer = new RobotContainer();
     }

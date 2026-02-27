@@ -13,7 +13,7 @@ public final class IntakePositionConstants {
     public static final boolean MOTOR_INVERTED = false;
     
     // Gear Ratio
-    public static final double GEAR_RATIO = 50.0; // Motor rotations per mechanism rotation
+    public static final double GEAR_RATIO = 10; // Motor rotations per mechanism rotation
     
     // Position Control (Motion Magic)
     public static final double MAX_VELOCITY_RPS = 2.0; // Mechanism RPS
@@ -22,7 +22,7 @@ public final class IntakePositionConstants {
     
     // Deploy Positions (in mechanism rotations)
     public static final double STOWED_POSITION_ROTATIONS = 0.0;
-    public static final double EXTENDED_POSITION_ROTATIONS = 0.25; // 90 degrees
+    public static final double EXTENDED_POSITION_ROTATIONS = 0.08;
     
     // Soft Limits
     public static final double MIN_SOFT_LIMIT = -0.05;

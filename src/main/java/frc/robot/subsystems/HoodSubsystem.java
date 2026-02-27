@@ -1,5 +1,6 @@
 package frc.robot.subsystems;
 
+import com.ctre.phoenix6.CANBus;
 import com.ctre.phoenix6.configs.MotionMagicConfigs;
 import com.ctre.phoenix6.configs.Slot0Configs;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
@@ -13,20 +14,26 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import frc.robot.constants.HoodConstants;
+import frc.robot.util.TelemetryThrottle;
 
 /**
  * Subsystem for controlling the shooter hood angle
  */
 public class HoodSubsystem extends SubsystemBase {
     
+    private final CANBus canBus;
     private final TalonFX hoodMotor;
     private final MotionMagicVoltage positionRequest;
     private final NeutralOut neutralRequest;
+    private final TelemetryThrottle telemetryThrottle;
     
     private Rotation2d targetAngle = Rotation2d.fromDegrees(HoodConstants.MIN_ANGLE_DEGREES);
     
     public HoodSubsystem() {
-        hoodMotor = new TalonFX(HoodConstants.MOTOR_ID, HoodConstants.CANBUS_NAME);
+        // Initialize CAN bus
+        canBus = new CANBus(HoodConstants.CANBUS_NAME);
+        
+        hoodMotor = new TalonFX(HoodConstants.MOTOR_ID, canBus);
         
         // Configure motor
         configureHood();
@@ -34,6 +41,9 @@ public class HoodSubsystem extends SubsystemBase {
         // Initialize control requests
         positionRequest = new MotionMagicVoltage(0).withSlot(0);
         neutralRequest = new NeutralOut();
+        
+        // Throttle telemetry to 5 Hz (200ms) to prevent loop overruns
+        telemetryThrottle = new TelemetryThrottle(0.2);
     }
     
     private void configureHood() {
@@ -153,7 +163,12 @@ public class HoodSubsystem extends SubsystemBase {
         // Update motor control
         hoodMotor.setControl(positionRequest.withPosition(targetAngle.getRotations()));
         
-        // Telemetry - angles rounded to 0.1 degree
+        // Throttle telemetry updates to prevent loop overruns
+        if (!telemetryThrottle.shouldUpdate()) {
+            return; // Skip this update cycle
+        }
+        
+        // Telemetry - angles rounded to 0.1 degree (throttled to 5 Hz)
         SmartDashboard.putNumber("Hood/Angle Degrees", Math.round(getAngleDegrees() * 10.0) / 10.0);
         SmartDashboard.putNumber("Hood/Target Degrees", Math.round(targetAngle.getDegrees() * 10.0) / 10.0);
     }

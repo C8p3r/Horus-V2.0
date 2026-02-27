@@ -9,6 +9,8 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
  */
 public class CANBusMonitor {
     
+    private final TelemetryThrottle telemetryThrottle;
+    
     private int canBusOffCount = 0;
     private int canTxErrorCount = 0;
     private int canRxErrorCount = 0;
@@ -17,8 +19,14 @@ public class CANBusMonitor {
     private boolean wasConnected = true;
     private int disconnectCount = 0;
     
+    public CANBusMonitor() {
+        // Throttle telemetry to 5 Hz (200ms) to prevent network I/O blocking
+        telemetryThrottle = new TelemetryThrottle(0.2);
+    }
+    
     /**
      * Update CAN bus telemetry - call this in Robot.periodic()
+     * Throttled to 200ms to prevent Status loop blocking
      */
     public void updateTelemetry() {
         // Get CAN bus statistics from RobotController
@@ -54,7 +62,12 @@ public class CANBusMonitor {
         }
         lastUpdateTime = currentTime;
         
-        // Publish to SmartDashboard
+        // Throttle telemetry updates to prevent Status loop blocking
+        if (!telemetryThrottle.shouldUpdate()) {
+            return; // Skip this update cycle
+        }
+        
+        // Publish to SmartDashboard (throttled to 5 Hz)
         SmartDashboard.putNumber("CAN/Utilization %", Math.round(canUtilization * 10.0) / 10.0);
         SmartDashboard.putNumber("CAN/Bus Off Count", canBusOffCount);
         SmartDashboard.putNumber("CAN/TX Error Count", canTxErrorCount);

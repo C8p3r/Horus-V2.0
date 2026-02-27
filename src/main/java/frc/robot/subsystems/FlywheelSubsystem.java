@@ -1,5 +1,6 @@
 package frc.robot.subsystems;
 
+import com.ctre.phoenix6.CANBus;
 import com.ctre.phoenix6.StatusSignal;
 import com.ctre.phoenix6.configs.MotionMagicConfigs;
 import com.ctre.phoenix6.configs.Slot0Configs;
@@ -19,6 +20,7 @@ import frc.robot.constants.FlywheelConstants;
  */
 public class FlywheelSubsystem extends SubsystemBase {
     
+    private final CANBus canBus;
     private final TalonFX flywheelMotor;
     private final MotionMagicVelocityVoltage velocityRequest;
     private final NeutralOut neutralRequest;
@@ -33,7 +35,10 @@ public class FlywheelSubsystem extends SubsystemBase {
     private double targetVelocityRPS = 0.0;
     
     public FlywheelSubsystem() {
-        flywheelMotor = new TalonFX(FlywheelConstants.MOTOR_ID, FlywheelConstants.CANBUS_NAME);
+        // Initialize CAN bus
+        canBus = new CANBus(FlywheelConstants.CANBUS_NAME);
+        
+        flywheelMotor = new TalonFX(FlywheelConstants.MOTOR_ID, canBus);
         
         // Configure motor
         configureFlywheel();

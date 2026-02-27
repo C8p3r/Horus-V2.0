@@ -17,18 +17,36 @@ import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.*;
 import frc.robot.commands.*;
-import frc.robot.util.CANBusMonitor;
+import frc.robot.constants.IntakePositionConstants;
+import frc.robot.constants.IntakeRollerConstants;
 import frc.robot.util.ControllerTelemetry;
 import frc.robot.util.FuelSim;
-import frc.robot.util.PowerMonitor;
+import frc.robot.util.TelemetryThrottle;
 
 public class RobotContainer {
     
     // ==================== CONSTANTS ====================
-    private static final boolean DISABLE_INTAKE_DEPLOY_MOTOR = true;
+    private static final boolean DISABLE_INTAKE_DEPLOY_MOTOR = false;
+    
+    /**
+     * Master toggle to disable ALL telemetry and logging
+     * Set to true to disable: SmartDashboard updates, AdvantageKit logging, controller telemetry,
+     * power monitoring, CAN bus monitoring, drivetrain telemetry, and subsystem periodic telemetry
+     */
+    public static final boolean DISABLE_ALL_TELEMETRY = false;
+    
+    /**
+     * Toggle to control whether intake retracts during shooting sequence
+     * Set to true to retract intake while shooting (default behavior)
+     * Set to false to keep intake deployed during shooting
+     */
+    public static final boolean RETRACT_INTAKE_WHILE_SHOOTING = false;
     
     private final double maxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
     private final double maxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond);
+    
+    // Climbing mode: Reduced speed for fine adjustments when climber is deployed
+    private static final double CLIMBING_SPEED_REDUCTION = 0.25; // 25% speed when climbing
     
     // ==================== SWERVE REQUESTS ====================
     private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric()
@@ -38,7 +56,7 @@ public class RobotContainer {
     private final SwerveRequest.SwerveDriveBrake brake = new SwerveRequest.SwerveDriveBrake();
     private final SwerveRequest.PointWheelsAt point = new SwerveRequest.PointWheelsAt();
     private final SwerveRequest.Idle idle = new SwerveRequest.Idle();
-    
+      
     // ==================== TELEMETRY ====================
     private final Telemetry logger = new Telemetry(maxSpeed);
     
@@ -64,21 +82,21 @@ public class RobotContainer {
     private final IntakePositionSubsystem intakePositionSubsystem = new IntakePositionSubsystem();
     private final IndexerSubsystem indexerSubsystem = new IndexerSubsystem();
     
+    // Climber
+    private final ClimberSubsystem climberSubsystem = new ClimberSubsystem();
+    
     // LEDs
     private final CANdleSubsystem candleSubsystem = new CANdleSubsystem();
     
     // Utilities
     private final ControllerTelemetry controllerTelemetry;
-    private final PowerMonitor powerMonitor;
-    private final CANBusMonitor canBusMonitor;
+    private final TelemetryThrottle robotContainerTelemetryThrottle = new TelemetryThrottle(0.2);
     
     // ==================== AUTONOMOUS CHOOSER ====================
     private final SendableChooser<Command> autoChooser = new SendableChooser<>();
 
     public RobotContainer() {
         controllerTelemetry = new ControllerTelemetry(joystick);
-        powerMonitor = new PowerMonitor();
-        canBusMonitor = new CANBusMonitor();
         
         if (DISABLE_INTAKE_DEPLOY_MOTOR) {
             intakePositionSubsystem.disableDeployMotor();
@@ -88,14 +106,42 @@ public class RobotContainer {
         configureAutoChooser();
         configureTurretCalibrationButtons();
         configureBindings();
+        configureDefaultCommands();
     }
     
     // ==================== CONFIGURATION ====================
     
     /**
+     * Configure default commands for subsystems
+     */
+    private void configureDefaultCommands() {
+        // Intake roller runs at default speed only when deployed (within tolerance of deployed position)
+        intakeRollerSubsystem.setDefaultCommand(
+            Commands.run(() -> {
+                double currentPosition = intakePositionSubsystem.getPosition();
+                double targetPosition = IntakePositionConstants.EXTENDED_POSITION_ROTATIONS;
+                double tolerance = IntakeRollerConstants.DEPLOYED_TOLERANCE_ROTATIONS;
+                
+                // Check if position is within ±tolerance of deployed position
+                boolean isNearDeployed = Math.abs(currentPosition - targetPosition) <= tolerance;
+                
+                if (isNearDeployed) {
+                    intakeRollerSubsystem.setDutyCycle(IntakeRollerConstants.DEFAULT_DUTY_CYCLE);
+                } else {
+                    intakeRollerSubsystem.stop();
+                }
+            }, intakeRollerSubsystem)
+        );
+    }
+    
+    /**
      * Publishes turret calibration buttons to SmartDashboard
      */
     private void configureTurretCalibrationButtons() {
+        if (DISABLE_ALL_TELEMETRY) {
+            return; // Skip SmartDashboard updates when telemetry is disabled
+        }
+        
         // Button to zero turret at current position
         SmartDashboard.putData("Turret: Zero Here", 
             Commands.runOnce(() -> turretSubsystem.zeroTurret(), turretSubsystem)
@@ -129,6 +175,7 @@ public class RobotContainer {
         configureDrivetrainControls();
         configureShooterControls();
         configureIntakeControls();
+        configureClimberControls();
         configureVisionControls();
         configurePathPlannerControls();
     }
@@ -136,13 +183,16 @@ public class RobotContainer {
     // ==================== DRIVETRAIN CONTROLS ====================
     
     private void configureDrivetrainControls() {
-        // Default command: field-centric drive
+        // Default command: field-centric drive with reduced speed when climber deployed
         drivetrain.setDefaultCommand(
-            drivetrain.applyRequest(() ->
-                drive.withVelocityX(-joystick.getLeftY() * maxSpeed)
-                    .withVelocityY(-joystick.getLeftX() * maxSpeed)
-                    .withRotationalRate(-joystick.getRightX() * maxAngularRate)
-            )
+            drivetrain.applyRequest(() -> {
+                // Apply speed reduction when climber is deployed for fine adjustments
+                double speedMultiplier = climberSubsystem.isDeployed() ? CLIMBING_SPEED_REDUCTION : 1.0;
+                
+                return drive.withVelocityX(-joystick.getLeftY() * maxSpeed * speedMultiplier)
+                    .withVelocityY(-joystick.getLeftX() * maxSpeed * speedMultiplier)
+                    .withRotationalRate(-joystick.getRightX() * maxAngularRate * speedMultiplier);
+            })
         );
 
         // Idle while disabled
@@ -164,7 +214,9 @@ public class RobotContainer {
         joystick.start().and(joystick.y()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kForward));
         joystick.start().and(joystick.x()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kReverse));
 
-        drivetrain.registerTelemetry(logger::telemeterize);
+        if (!DISABLE_ALL_TELEMETRY) {
+            drivetrain.registerTelemetry(logger::telemeterize);
+        }
     }
     
     // ==================== VISION CONTROLS ====================
@@ -235,7 +287,8 @@ public class RobotContainer {
                 turretSubsystem,
                 hoodSubsystem,
                 intakeRollerSubsystem,
-                40.0,
+                intakePositionSubsystem,
+                50.0,
                 Rotation2d.fromDegrees(355),   // Turret angle: forward
                 Rotation2d.fromDegrees(45)   // Hood angle: 45 degrees
             )
@@ -249,8 +302,9 @@ public class RobotContainer {
                 turretSubsystem,
                 hoodSubsystem,
                 intakeRollerSubsystem,
-                40.0,
-                Rotation2d.fromDegrees(55), // Turret angle: forward
+                intakePositionSubsystem,
+                50.0,
+                Rotation2d.fromDegrees(180), // Turret angle: forward
                 Rotation2d.fromDegrees(30)   // Hood angle: 30 degrees
             )
         );
@@ -270,6 +324,22 @@ public class RobotContainer {
         );
     }
     
+    // ==================== CLIMBER CONTROLS ====================
+    
+    private void configureClimberControls() {
+        // Y button (operator): Deploy climber (unspool winch)
+        operatorController.y().onTrue(
+            ClimberCommand.deployClimber(climberSubsystem, intakePositionSubsystem, intakeRollerSubsystem, 
+                indexerSubsystem, flywheelSubsystem, turretSubsystem, hoodSubsystem)
+        );
+        
+        // X button (operator): Store climber (spool winch - actively climb)
+        operatorController.x().onTrue(
+            ClimberCommand.storeClimber(climberSubsystem, intakePositionSubsystem, intakeRollerSubsystem,
+                indexerSubsystem, flywheelSubsystem, turretSubsystem, hoodSubsystem)
+        );
+    }
+    
     // ==================== AUTONOMOUS ====================
     
     /**
@@ -281,12 +351,7 @@ public class RobotContainer {
         
         // PathPlanner auto routines (from deploy/pathplanner/autos/*.auto files)
         autoChooser.addOption("Example Auto", pathPlannerSubsystem.getAutonomousCommand("Example Auto"));
-        
-        // Add more PathPlanner autos here as you create them:
-        // autoChooser.addOption("4 Note Auto", pathPlannerSubsystem.getAutonomousCommand("4 Note Auto"));
-        // autoChooser.addOption("3 Note Center", pathPlannerSubsystem.getAutonomousCommand("3 Note Center"));
-        // autoChooser.addOption("2 Note Amp Side", pathPlannerSubsystem.getAutonomousCommand("2 Note Amp Side"));
-        
+    
         // Simple test auto
         autoChooser.addOption("Drive Forward", 
             Commands.sequence(
@@ -301,7 +366,9 @@ public class RobotContainer {
         );
         
         // Put chooser on SmartDashboard
-        SmartDashboard.putData("Auto Chooser", autoChooser);
+        if (!DISABLE_ALL_TELEMETRY) {
+            SmartDashboard.putData("Auto Chooser", autoChooser);
+        }
     }
     
     public Command getAutonomousCommand() {
@@ -327,9 +394,15 @@ public class RobotContainer {
     private static final int ORANGE_FLASH_DURATION = 10; // cycles (~200ms)
     
     public void periodic() {
-        controllerTelemetry.periodic();
-        powerMonitor.updateTelemetry();
-        canBusMonitor.updateTelemetry();
+        if (!DISABLE_ALL_TELEMETRY) {
+            controllerTelemetry.periodic();
+            
+            // Throttle SmartDashboard updates to prevent loop overruns
+            if (robotContainerTelemetryThrottle.shouldUpdate()) {
+                // Display climbing mode status (throttled to 5 Hz)
+                SmartDashboard.putBoolean("Climbing Mode (Reduced Speed)", climberSubsystem.isDeployed());
+            }
+        }
         updateVelocityDipDetection();
         updateLEDFeedback();
         updateControllerRumble();
@@ -395,22 +468,21 @@ public class RobotContainer {
      * Provides visual feedback for shooting, intake, and other states
      */
     private void updateLEDFeedback() {
-        // EMERGENCY OVERRIDE: Brownout detected - rapid red/yellow blink
-        if (powerMonitor.isBrownout()) {
-            // Alternate red/yellow to indicate power emergency
-            candleSubsystem.setRapidRedBlink();
-            return;
-        }
-        
         // CRITICAL OVERRIDE: Flywheel overheating - rapid red blink
         if (flywheelSubsystem.isOverheating()) {
             candleSubsystem.setRapidRedBlink();
             return;
         }
         
-        // WARNING: Low voltage - dim yellow
-        if (powerMonitor.isLowVoltage()) {
-            candleSubsystem.setRGB(100, 100, 0); // Dim yellow warning
+        // HIGHEST PRIORITY: Climber deployed - slow rainbow (waiting to climb)
+        if (climberSubsystem.isFullyDeployed() && climberSubsystem.isDeployed()) {
+            candleSubsystem.setSlowRainbow();
+            return;
+        }
+        
+        // HIGHEST PRIORITY: Actively climbing - rapid rainbow
+        if (climberSubsystem.isDeployed() && !climberSubsystem.isRetracted()) {
+            candleSubsystem.setRapidRainbow();
             return;
         }
         

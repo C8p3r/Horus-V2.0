@@ -1,0 +1,60 @@
+{
+  "Device": [
+    {
+      "name": "LED",
+      "summary": "",
+      "description": "",
+      "ordinal": 0,
+      "configs": [
+        {
+          "name": "Strip Type",
+          "summary": "The type of LEDs that are being controlled.",
+          "ordinal": 0,
+          "type": "StripTypeValue",
+          "description": "",
+          "units": "",
+          "min_value": -1.7976931348623157E+308,
+          "max_value": 1.7976931348623157E+308,
+          "signal_id": 2653,
+          "signal_name": "Config_LED_StripType",
+          "default_value": 0,
+          "value": 1,
+          "param_value": "RGB",
+          "enum_values": [
+            {
+              "name": "GRB",
+              "comment": "LEDs that are controlled by Green-Red-Blue values.",
+              "value": 0
+            },
+            {
+              "name": "RGB",
+              "comment": "LEDs that are controlled by Red-Green-Blue values.",
+              "value": 1
+            },
+            {
+              "name": "BRG",
+              "comment": "LEDs that are controlled by Blue-Red-Green values.",
+              "value": 2
+            },
+            {
+              "name": "GRBW",
+              "comment": "LEDs that are controlled by Green-Red-Blue-White values.",
+              "value": 6
+            },
+            {
+              "name": "RGBW",
+              "comment": "LEDs that are controlled by Red-Green-Blue-White values.",
+              "value": 7
+            },
+            {
+              "name": "BRGW",
+              "comment": "LEDs that are controlled by Blue-Red-Green-White values.",
+              "value": 8
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "JsonVersion": 2
+}

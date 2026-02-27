@@ -12,6 +12,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 public class PowerMonitor {
     
     private final PowerDistribution pdh;
+    private final TelemetryThrottle telemetryThrottle;
     
     // Brownout detection thresholds
     private static final double BROWNOUT_VOLTAGE = 6.8; // Radio loses connection below ~6.5V
@@ -26,10 +27,14 @@ public class PowerMonitor {
     public PowerMonitor() {
         // Initialize PDH (REV Power Distribution Hub)
         pdh = new PowerDistribution(1, ModuleType.kRev);
+        
+        // Throttle telemetry to 5 Hz (200ms) to prevent network I/O blocking
+        telemetryThrottle = new TelemetryThrottle(0.2);
     }
     
     /**
      * Update power telemetry - call this in Robot.periodic()
+     * Throttled to 200ms to prevent Status loop blocking
      */
     public void updateTelemetry() {
         // Get battery voltage from RobotController (most accurate)
@@ -51,7 +56,12 @@ public class PowerMonitor {
             brownoutCount++;
         }
         
-        // Publish to SmartDashboard
+        // Throttle telemetry updates to prevent Status loop blocking
+        if (!telemetryThrottle.shouldUpdate()) {
+            return; // Skip this update cycle
+        }
+        
+        // Publish to SmartDashboard (throttled to 5 Hz)
         SmartDashboard.putNumber("Power/Battery Voltage", Math.round(batteryVoltage * 100.0) / 100.0);
         SmartDashboard.putNumber("Power/Total Current", Math.round(totalCurrent * 10.0) / 10.0);
         SmartDashboard.putNumber("Power/Total Power (W)", Math.round(batteryVoltage * totalCurrent * 10.0) / 10.0);

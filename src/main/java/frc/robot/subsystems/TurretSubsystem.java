@@ -1,5 +1,6 @@
 package frc.robot.subsystems;
 
+import com.ctre.phoenix6.CANBus;
 import com.ctre.phoenix6.StatusSignal;
 import com.ctre.phoenix6.configs.MotionMagicConfigs;
 import com.ctre.phoenix6.configs.Slot0Configs;
@@ -16,6 +17,7 @@ import frc.robot.constants.TurretConstants;
 
 public class TurretSubsystem extends SubsystemBase {
     
+    private final CANBus canBus;
     private final TalonFX turretMotor;
     private final StatusSignal<?> positionSignal;
     private final StatusSignal<?> velocitySignal;
@@ -23,7 +25,10 @@ public class TurretSubsystem extends SubsystemBase {
     private Rotation2d targetAngle = new Rotation2d();
     
     public TurretSubsystem() {
-        turretMotor = new TalonFX(TurretConstants.MOTOR_ID, TurretConstants.CANBUS_NAME);
+        // Initialize CAN bus
+        canBus = new CANBus(TurretConstants.CANBUS_NAME);
+        
+        turretMotor = new TalonFX(TurretConstants.MOTOR_ID, canBus);
         positionSignal = turretMotor.getPosition();
         velocitySignal = turretMotor.getVelocity();
         positionSignal.setUpdateFrequency(100);

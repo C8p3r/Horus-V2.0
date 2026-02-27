@@ -2,6 +2,26 @@ package frc.robot.constants;
 
 /**
  * Constants for the CANdle LED subsystem
+ * 
+ * AUTOMATIC GRB COLOR REMAPPING:
+ * ===============================
+ * This subsystem automatically handles GRB color order in SOFTWARE.
+ * No Phoenix Tuner X configuration needed!
+ * 
+ * How it works:
+ * - You call setRGB(255, 0, 0) for RED in your code
+ * - The subsystem automatically swaps channels: (R, G, B) -> (G, R, B)
+ * - The strip receives (0, 255, 0) which displays RED on GRB strips
+ * 
+ * Color Mapping (RGB input -> GRB output):
+ * - setRGB(255, 0, 0) -> RED displays correctly
+ * - setRGB(0, 255, 0) -> GREEN displays correctly
+ * - setRGB(0, 0, 255) -> BLUE displays correctly
+ * - setRGB(255, 255, 0) -> YELLOW displays correctly
+ * - etc.
+ * 
+ * This works for WS2812B, NeoPixel, and other GRB LED strips.
+ * No hardware configuration required - handled in code!
  */
 public final class CANdleConstants {
     
@@ -11,7 +31,7 @@ public final class CANdleConstants {
     
     // LED Configuration
     public static final int LED_START_INDEX = 0; // Start at first onboard LED
-    public static final int LED_END_INDEX = 67; // 8 onboard + 60 external = 68 total (0-67)
+    public static final int LED_END_INDEX = 99; // 8 onboard + 60 external = 68 total (0-67)
     
     // LED Counts
     public static final int NUM_ONBOARD_LEDS = 8;

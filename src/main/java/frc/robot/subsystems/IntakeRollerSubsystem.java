@@ -1,10 +1,9 @@
 package frc.robot.subsystems;
 
+import com.ctre.phoenix6.CANBus;
 import com.ctre.phoenix6.StatusSignal;
-import com.ctre.phoenix6.configs.MotionMagicConfigs;
-import com.ctre.phoenix6.configs.Slot0Configs;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
-import com.ctre.phoenix6.controls.MotionMagicVelocityVoltage;
+import com.ctre.phoenix6.controls.DutyCycleOut;
 import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
@@ -15,21 +14,25 @@ import frc.robot.constants.IntakeRollerConstants;
 
 /**
  * Subsystem for controlling the intake roller motor.
- * Controls the roller velocity to intake or eject game pieces.
+ * Controls the roller duty cycle to intake or eject game pieces.
  */
 public class IntakeRollerSubsystem extends SubsystemBase {
     
+    private final CANBus canBus;
     private final TalonFX rollerMotor;
     
     // Cached status signal for performance (Phoenix 6 optimization)
     private final StatusSignal<?> velocitySignal;
     
     // Control request
-    private final MotionMagicVelocityVoltage velocityRequest;
+    private final DutyCycleOut dutyCycleRequest;
     
     public IntakeRollerSubsystem() {
+        // Initialize CAN bus
+        canBus = new CANBus(IntakeRollerConstants.CANBUS_NAME);
+        
         // Initialize motor
-        rollerMotor = new TalonFX(IntakeRollerConstants.MOTOR_ID, IntakeRollerConstants.CANBUS_NAME);
+        rollerMotor = new TalonFX(IntakeRollerConstants.MOTOR_ID, canBus);
         
         // Initialize cached status signal for performance
         velocitySignal = rollerMotor.getVelocity();
@@ -39,14 +42,14 @@ public class IntakeRollerSubsystem extends SubsystemBase {
         rollerMotor.optimizeBusUtilization();
         
         // Initialize control request
-        velocityRequest = new MotionMagicVelocityVoltage(0);
+        dutyCycleRequest = new DutyCycleOut(0);
         
         // Configure motor
         configureRollerMotor();
     }
     
     /**
-     * Configure the intake roller motor for velocity control
+     * Configure the intake roller motor for duty cycle control
      */
     private void configureRollerMotor() {
         TalonFXConfiguration config = new TalonFXConfiguration();
@@ -56,18 +59,6 @@ public class IntakeRollerSubsystem extends SubsystemBase {
         config.MotorOutput.Inverted = IntakeRollerConstants.MOTOR_INVERTED
             ? InvertedValue.Clockwise_Positive
             : InvertedValue.CounterClockwise_Positive;
-        
-        // Motion Magic velocity configuration
-        MotionMagicConfigs mmConfigs = config.MotionMagic;
-        mmConfigs.MotionMagicAcceleration = IntakeRollerConstants.MAX_ACCELERATION_RPSS;
-        mmConfigs.MotionMagicJerk = IntakeRollerConstants.MAX_JERK_RPSSS;
-        
-        // PID configuration (placeholder values - tune these)
-        Slot0Configs slot0 = config.Slot0;
-        slot0.kP = 0.1;
-        slot0.kI = 0.0;
-        slot0.kD = 0.0;
-        slot0.kV = 0.12; // Velocity feedforward
         
         // Current Limits (prevent brownouts)
         config.CurrentLimits.SupplyCurrentLimit = IntakeRollerConstants.SUPPLY_CURRENT_LIMIT;
@@ -80,11 +71,23 @@ public class IntakeRollerSubsystem extends SubsystemBase {
     }
     
     /**
-     * Run the intake roller at the specified velocity
-     * @param velocityRPS Roller velocity in rotations per second (positive = intake)
+     * Run the intake roller at the specified duty cycle
+     * @param dutyCycle Roller duty cycle from -1.0 to 1.0 (positive = intake)
      */
+    public void setDutyCycle(double dutyCycle) {
+        rollerMotor.setControl(dutyCycleRequest.withOutput(dutyCycle));
+    }
+    
+    /**
+     * Legacy method for velocity control - converts RPS to duty cycle
+     * @param velocityRPS Roller velocity in rotations per second (positive = intake)
+     * @deprecated Use setDutyCycle instead
+     */
+    @Deprecated
     public void setVelocity(double velocityRPS) {
-        rollerMotor.setControl(velocityRequest.withVelocity(velocityRPS));
+        // Convert RPS to approximate duty cycle (assuming max ~40 RPS at full power)
+        double dutyCycle = velocityRPS / 40.0;
+        setDutyCycle(dutyCycle);
     }
     
     /**

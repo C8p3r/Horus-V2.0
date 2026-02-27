@@ -1,5 +1,6 @@
 package frc.robot.subsystems;
 
+import com.ctre.phoenix6.CANBus;
 import com.ctre.phoenix6.StatusSignal;
 import com.ctre.phoenix6.configs.MotionMagicConfigs;
 import com.ctre.phoenix6.configs.Slot0Configs;
@@ -20,6 +21,7 @@ import frc.robot.constants.IntakePositionConstants;
  */
 public class IntakePositionSubsystem extends SubsystemBase {
     
+    private final CANBus canBus;
     private final TalonFX deployMotor;
     
     // Cached status signal for performance (Phoenix 6 optimization)
@@ -28,15 +30,15 @@ public class IntakePositionSubsystem extends SubsystemBase {
     // Control request
     private final MotionMagicVoltage positionRequest;
     
-    // State tracking
-    private boolean isDeployed = false;
-    
     // Deploy motor override (disables deploy motor for testing)
     private boolean deployMotorDisabled = false;
     
     public IntakePositionSubsystem() {
+        // Initialize CAN bus
+        canBus = new CANBus(IntakePositionConstants.CANBUS_NAME);
+        
         // Initialize motor
-        deployMotor = new TalonFX(IntakePositionConstants.MOTOR_ID, IntakePositionConstants.CANBUS_NAME);
+        deployMotor = new TalonFX(IntakePositionConstants.MOTOR_ID, canBus);
         
         // Initialize cached status signal for performance
         positionSignal = deployMotor.getPosition();
@@ -86,7 +88,7 @@ public class IntakePositionSubsystem extends SubsystemBase {
         
         // PID configuration (placeholder values - tune these)
         Slot0Configs slot0 = config.Slot0;
-        slot0.kP = 10.0;
+        slot0.kP = 200.0;
         slot0.kI = 0.0;
         slot0.kD = 0.0;
         slot0.kV = 0.0;
@@ -103,7 +105,6 @@ public class IntakePositionSubsystem extends SubsystemBase {
             deployMotor.setControl(
                 positionRequest.withPosition(IntakePositionConstants.EXTENDED_POSITION_ROTATIONS)
             );
-            isDeployed = true;
         }
     }
     
@@ -115,7 +116,6 @@ public class IntakePositionSubsystem extends SubsystemBase {
             deployMotor.setControl(
                 positionRequest.withPosition(IntakePositionConstants.STOWED_POSITION_ROTATIONS)
             );
-            isDeployed = false;
         }
     }
     
@@ -126,15 +126,15 @@ public class IntakePositionSubsystem extends SubsystemBase {
     public void setPosition(double positionRotations) {
         if (!deployMotorDisabled) {
             deployMotor.setControl(positionRequest.withPosition(positionRotations));
-            isDeployed = positionRotations > IntakePositionConstants.STOWED_POSITION_ROTATIONS;
         }
     }
     
     /**
      * Check if the intake is deployed
+     * Since there's a physical hard stop, consider deployed if position >= EXTENDED_POSITION_ROTATIONS
      */
     public boolean isDeployed() {
-        return isDeployed;
+        return getPosition() >= IntakePositionConstants.EXTENDED_POSITION_ROTATIONS;
     }
     
     /**
@@ -215,7 +215,7 @@ public class IntakePositionSubsystem extends SubsystemBase {
         if (telemetryCounter >= TELEMETRY_UPDATE_PERIOD) {
             telemetryCounter = 0;
             SmartDashboard.putBoolean("IntakePosition/Deploy Motor Disabled", deployMotorDisabled);
-            SmartDashboard.putBoolean("IntakePosition/Is Deployed", isDeployed);
+            SmartDashboard.putBoolean("IntakePosition/Is Deployed", isDeployed());
             SmartDashboard.putNumber("IntakePosition/Position", getPosition());
             SmartDashboard.putBoolean("IntakePosition/At Extended", atExtendedPosition());
             SmartDashboard.putBoolean("IntakePosition/At Stowed", atStowedPosition());
