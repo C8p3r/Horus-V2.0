@@ -99,4 +99,48 @@ public class IntakeCommand {
             indexerSubsystem.stopAll();
         });
     }
+    
+    /**
+     * Three-state intake toggle:
+     * State 1 (retracted/off): Deploy and turn on at full speed
+     * State 2 (deployed/on): Turn off but stay deployed
+     * State 3 (deployed/off): Retract and turn off
+     * 
+     * @param intakeRollerSubsystem The intake roller subsystem
+     * @param intakePositionSubsystem The intake position subsystem
+     * @param indexerSubsystem The indexer subsystem
+     * @return The toggle command
+     */
+    public static Command toggleIntake(
+            IntakeRollerSubsystem intakeRollerSubsystem,
+            IntakePositionSubsystem intakePositionSubsystem,
+            IndexerSubsystem indexerSubsystem) {
+        
+        return Commands.either(
+            // If deployed, check if motors are running
+            Commands.either(
+                // Motors running: State 2 (deployed/on) -> State 3 (deployed/off) - turn off motors
+                Commands.runOnce(() -> {
+                    intakeRollerSubsystem.stop();
+                    indexerSubsystem.stopAll();
+                }),
+                // Motors stopped: State 3 (deployed/off) -> State 1 (retracted/off) - retract
+                Commands.runOnce(() -> intakePositionSubsystem.retract()),
+                // Check if roller motor is running
+                () -> Math.abs(intakeRollerSubsystem.getVelocity()) > 1.0 // > 1 RPS means running
+            ),
+            // If retracted: State 1 -> State 2 - deploy and turn on
+            Commands.sequence(
+                Commands.runOnce(() -> intakePositionSubsystem.deploy()),
+                Commands.waitSeconds(0.3), // Wait for deployment
+                Commands.runOnce(() -> {
+                    intakeRollerSubsystem.setDutyCycle(IntakeRollerConstants.INTAKE_DUTY_CYCLE);
+                    indexerSubsystem.setFloorIndexerDutyCycle(FLOOR_INDEXER_DUTY_CYCLE);
+                    indexerSubsystem.setFireIndexerDutyCycle(FIRE_INDEXER_REVERSE_DUTY_CYCLE);
+                })
+            ),
+            // Check if deployed
+            intakePositionSubsystem::isDeployed
+        );
+    }
 }

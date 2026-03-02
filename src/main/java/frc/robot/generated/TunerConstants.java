@@ -197,8 +197,22 @@ public class TunerConstants {
      * This should only be called once in your robot program,.
      */
     public static CommandSwerveDrivetrain createDrivetrain() {
+        // Configure odometry standard deviation (wheel encoder trust)
+        // VERY HIGH values = ignore wheel odometry when vision is available
+        // [x, y, theta] in meters and radians
+        Matrix<N3, N1> odometryStdDevs = edu.wpi.first.math.VecBuilder.fill(10.0, 10.0, 10.0);
+        
+        // Configure default vision standard deviation
+        // VERY LOW values = trust vision completely
+        // [x, y, theta] in meters and radians
+        Matrix<N3, N1> visionStdDevs = edu.wpi.first.math.VecBuilder.fill(0.01, 0.01, 0.02);
+        
         return new CommandSwerveDrivetrain(
-            DrivetrainConstants, FrontLeft, FrontRight, BackLeft, BackRight
+            DrivetrainConstants, 
+            250.0,  // 250 Hz odometry update rate
+            odometryStdDevs,
+            visionStdDevs,
+            FrontLeft, FrontRight, BackLeft, BackRight
         );
     }
 

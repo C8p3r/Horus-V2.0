@@ -157,7 +157,7 @@ public class FlywheelSubsystem extends SubsystemBase {
     
     @Override
     public void periodic() {
-        // Update motor control
+        // Update motor control - targetVelocityRPS is set by default command or manual control
         flywheelMotor.setControl(velocityRequest.withVelocity(targetVelocityRPS));
         
         // Refresh cached signals

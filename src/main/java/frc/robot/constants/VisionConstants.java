@@ -31,12 +31,29 @@ public final class VisionConstants {
     );
     
     // Standard Deviations for Vision Measurements (MegaTag2)
-    // Single tag: higher uncertainty [x, y, rotation] in meters and radians
-    public static final Matrix<N3, N1> SINGLE_TAG_STD_DEVS = VecBuilder.fill(4.0, 4.0, 8.0);
+    // These control how much the pose estimator trusts vision vs wheel odometry
+    // Lower values = more trust in vision, Higher values = less trust in vision
+    // 
+    // TUNED FOR VISION-PRIMARY POSE ESTIMATION:
+    // Vision measurements are now heavily trusted to correct wheel odometry drift
     
-    // Multiple tags: lower uncertainty [x, y, rotation] in meters and radians
-    public static final Matrix<N3, N1> MULTI_TAG_STD_DEVS = VecBuilder.fill(0.5, 0.5, 1.0);
+    // Single tag: Very low uncertainty - trust single tag measurements heavily
+    // [x, y, rotation] in meters and radians
+    public static final Matrix<N3, N1> SINGLE_TAG_STD_DEVS = VecBuilder.fill(0.05, 0.05, 0.1);
     
-    // Maximum Distance
-    public static final double MAX_VISION_DISTANCE = 5.0; // meters
+    // Multiple tags: Extremely low uncertainty - trust multi-tag completely
+    // [x, y, rotation] in meters and radians  
+    public static final Matrix<N3, N1> MULTI_TAG_STD_DEVS = VecBuilder.fill(0.01, 0.01, 0.02);
+    
+    // Quality thresholds for filtering bad measurements
+    public static final double MAX_VISION_DISTANCE = 4.5; // meters - reject measurements beyond this
+    public static final double MIN_TAG_AREA = 0.05; // % - reject if tags too small (too far/poor view)
+    public static final double MIN_TAG_SPAN_MULTI = 0.4; // meters - reject multi-tag if geometry is poor
+    public static final double MAX_AMBIGUITY = 0.3; // reject if pose ambiguity is too high (0-1 scale)
+    public static final int MIN_TAGS_FOR_ROTATION = 2; // need at least 2 tags to trust rotation
+    
+    // Pose jump filtering - reject measurements that are too far from current pose
+    public static final double MAX_POSE_JUMP_DISTANCE = 1.5; // meters - max allowed position jump
+    public static final double MAX_POSE_JUMP_ROTATION = Math.toRadians(30); // radians - max allowed rotation jump
 }
+

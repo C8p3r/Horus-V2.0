@@ -143,6 +143,15 @@ public class LimelightHelpers {
     }
     
     /**
+     * Gets the MegaTag1 robot pose estimate in field space (WPI Blue Alliance)
+     * MegaTag1 uses ORB feature tracking for improved accuracy in some scenarios
+     * Returns full PoseEstimate with tag count, tag span, distance, and area metadata
+     */
+    public static PoseEstimate getBotPoseEstimate_wpiBlue_MegaTag1(String limelightName) {
+        return getBotPoseEstimate(limelightName, "botpose_orb_wpiblue");
+    }
+    
+    /**
      * Gets the MegaTag2 robot pose estimate in field space (WPI Red Alliance)
      * This is the RECOMMENDED method for getting pose with MegaTag2
      * Returns full PoseEstimate with tag count, tag span, distance, and area metadata

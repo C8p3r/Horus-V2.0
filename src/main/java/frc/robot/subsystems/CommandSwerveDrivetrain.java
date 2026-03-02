@@ -14,12 +14,14 @@ import com.ctre.phoenix6.swerve.SwerveRequest;
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.kinematics.SwerveModuleState;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.Notifier;
 import edu.wpi.first.wpilibj.RobotController;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Subsystem;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine;
@@ -240,6 +242,25 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
                 m_hasAppliedOperatorPerspective = true;
             });
         }
+        
+        // Publish module states for visualization
+        SwerveModuleState[] moduleStates = getState().ModuleStates;
+        SmartDashboard.putNumberArray("Swerve/ModuleStates", new double[] {
+            moduleStates[0].angle.getRadians(), moduleStates[0].speedMetersPerSecond,
+            moduleStates[1].angle.getRadians(), moduleStates[1].speedMetersPerSecond,
+            moduleStates[2].angle.getRadians(), moduleStates[2].speedMetersPerSecond,
+            moduleStates[3].angle.getRadians(), moduleStates[3].speedMetersPerSecond
+        });
+        
+        // Publish individual module data for easier debugging
+        SmartDashboard.putNumber("Swerve/FrontLeft/Angle", moduleStates[0].angle.getDegrees());
+        SmartDashboard.putNumber("Swerve/FrontLeft/Speed", moduleStates[0].speedMetersPerSecond);
+        SmartDashboard.putNumber("Swerve/FrontRight/Angle", moduleStates[1].angle.getDegrees());
+        SmartDashboard.putNumber("Swerve/FrontRight/Speed", moduleStates[1].speedMetersPerSecond);
+        SmartDashboard.putNumber("Swerve/BackLeft/Angle", moduleStates[2].angle.getDegrees());
+        SmartDashboard.putNumber("Swerve/BackLeft/Speed", moduleStates[2].speedMetersPerSecond);
+        SmartDashboard.putNumber("Swerve/BackRight/Angle", moduleStates[3].angle.getDegrees());
+        SmartDashboard.putNumber("Swerve/BackRight/Speed", moduleStates[3].speedMetersPerSecond);
     }
 
     private void startSimThread() {
@@ -262,11 +283,12 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
      * while still accounting for measurement noise.
      *
      * @param visionRobotPoseMeters The pose of the robot as measured by the vision camera.
-     * @param timestampSeconds The timestamp of the vision measurement in seconds.
+     * @param timestampSeconds The timestamp of the vision measurement in seconds (FPGA time).
      */
     @Override
     public void addVisionMeasurement(Pose2d visionRobotPoseMeters, double timestampSeconds) {
-        super.addVisionMeasurement(visionRobotPoseMeters, Utils.fpgaToCurrentTime(timestampSeconds));
+        // Timestamp is already in FPGA time from LimelightHelpers, pass directly to parent
+        super.addVisionMeasurement(visionRobotPoseMeters, timestampSeconds);
     }
 
     /**
@@ -278,7 +300,7 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
      * {@link #setVisionMeasurementStdDevs(Matrix)} or this method.
      *
      * @param visionRobotPoseMeters The pose of the robot as measured by the vision camera.
-     * @param timestampSeconds The timestamp of the vision measurement in seconds.
+     * @param timestampSeconds The timestamp of the vision measurement in seconds (FPGA time).
      * @param visionMeasurementStdDevs Standard deviations of the vision pose measurement
      *     in the form [x, y, theta]ᵀ, with units in meters and radians.
      */
@@ -288,7 +310,16 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         double timestampSeconds,
         Matrix<N3, N1> visionMeasurementStdDevs
     ) {
-        super.addVisionMeasurement(visionRobotPoseMeters, Utils.fpgaToCurrentTime(timestampSeconds), visionMeasurementStdDevs);
+        // Timestamp is already in FPGA time from LimelightHelpers, pass directly to parent
+        super.addVisionMeasurement(visionRobotPoseMeters, timestampSeconds, visionMeasurementStdDevs);
+        
+        // Optional: Log significant pose updates for debugging
+        // Uncomment for detailed vision debugging
+        // double currentTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
+        // double timestampAge = currentTime - timestampSeconds;
+        // if (timestampAge > 0.5) {
+        //     System.out.println("WARNING: Old vision timestamp - age: " + String.format("%.3fs", timestampAge));
+        // }
     }
 
     /**
@@ -300,5 +331,61 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     @Override
     public Optional<Pose2d> samplePoseAt(double timestampSeconds) {
         return super.samplePoseAt(Utils.fpgaToCurrentTime(timestampSeconds));
+    }
+    
+    /**
+     * Reset the robot's pose to the specified pose from vision.
+     * This performs a HARD RESET of the pose - useful for initialization.
+     *
+     * @param pose The pose to initialize to
+     */
+    public void initializePoseFromVision(Pose2d pose) {
+        System.out.println("DRIVETRAIN: HARD RESET pose to vision measurement: " + 
+            String.format("(%.2f, %.2f, %.1f°)", 
+                pose.getX(), pose.getY(), pose.getRotation().getDegrees()));
+        
+        // Use resetPose to perform a hard reset of the pose estimator
+        // This bypasses the Kalman filter and directly sets the pose
+        resetPose(pose);
+        
+        System.out.println("DRIVETRAIN: Pose after reset: " + 
+            String.format("(%.2f, %.2f, %.1f°)", 
+                getState().Pose.getX(), 
+                getState().Pose.getY(), 
+                getState().Pose.getRotation().getDegrees()));
+    }
+    
+    // Reference to VisionSubsystem for vision-primary pose
+    private VisionSubsystem visionSubsystem;
+    
+    /**
+     * Set the vision subsystem reference for vision-primary pose estimation
+     * When vision is available, getPose() will return the vision pose directly
+     * instead of the fused pose from the Kalman filter.
+     *
+     * @param visionSubsystem The vision subsystem to use
+     */
+    public void setVisionSubsystem(VisionSubsystem visionSubsystem) {
+        this.visionSubsystem = visionSubsystem;
+    }
+    
+    /**
+     * Get the robot's current pose.
+     * When vision is available and valid, returns the vision pose directly (bypasses wheel odometry).
+     * Otherwise, returns the fused pose from the Kalman filter.
+     *
+     * @return The robot's pose - vision pose if available, otherwise fused pose
+     */
+    public Pose2d getPose() {
+        // If vision subsystem is available and has a valid measurement, use vision pose
+        if (visionSubsystem != null) {
+            VisionSubsystem.VisionMeasurement visionMeasurement = visionSubsystem.getMostTrustedVisionMeasurement();
+            if (visionMeasurement != null) {
+                return visionMeasurement.pose();
+            }
+        }
+        
+        // Fall back to fused pose from Kalman filter
+        return getState().Pose;
     }
 }

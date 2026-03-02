@@ -6,6 +6,7 @@ package frc.robot;
 
 import com.ctre.phoenix6.HootAutoReplay;
 
+import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
 import org.littletonrobotics.junction.LoggedRobot;
@@ -13,11 +14,15 @@ import org.littletonrobotics.junction.Logger;
 import org.littletonrobotics.junction.networktables.NT4Publisher;
 import org.littletonrobotics.junction.wpilog.WPILOGWriter;
 import frc.robot.util.FuelSim;
+import frc.robot.util.ShootingCalculator;
 
 public class Robot extends LoggedRobot {
     private Command m_autonomousCommand;
 
     private final RobotContainer m_robotContainer;
+    
+    // Track if we've initialized pose from vision when first enabled
+    private boolean poseInitializedFromVision = false;
 
     /* log and replay timestamp and joystick data */
     private final HootAutoReplay m_timeAndJoystickReplay = new HootAutoReplay()
@@ -58,19 +63,46 @@ public class Robot extends LoggedRobot {
         
         // Update controller telemetry
         m_robotContainer.periodic();
+        
+        // Publish current robot pose for debugging
+        Pose2d currentPose = m_robotContainer.getDrivetrain().getState().Pose;
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber("Robot/CurrentX", currentPose.getX());
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber("Robot/CurrentY", currentPose.getY());
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber("Robot/CurrentHeading", currentPose.getRotation().getDegrees());
     }
 
     @Override
-    public void disabledInit() {}
+    public void disabledInit() {
+        // Reset the flag when entering disabled
+        poseInitializedFromVision = false;
+        
+        // Return turret to initial position (180° - facing backward)
+        m_robotContainer.getTurretSubsystem().returnToInitialPosition();
+    }
 
     @Override
-    public void disabledPeriodic() {}
+    public void disabledPeriodic() {
+        // Initialize robot pose from vision ONCE while disabled (when first tags are seen)
+        // After that, let normal vision fusion handle updates
+        if (!poseInitializedFromVision) {
+            Pose2d visionPose = m_robotContainer.getVisionSubsystem().getBestVisionPose();
+            if (visionPose != null) {
+                m_robotContainer.getDrivetrain().initializePoseFromVision(visionPose);
+                poseInitializedFromVision = true;
+                System.out.println("Pose initialized from vision: " + visionPose);
+            }
+        }
+    }
 
     @Override
-    public void disabledExit() {}
+    public void disabledExit() {
+        // When exiting disabled (entering auto or teleop), the pose is already set from vision
+        // Wheel odometry will now supplement vision measurements
+    }
 
     @Override
     public void autonomousInit() {
+        // Pose already initialized from vision during disabled
         m_autonomousCommand = m_robotContainer.getAutonomousCommand();
 
         if (m_autonomousCommand != null) {
@@ -89,6 +121,9 @@ public class Robot extends LoggedRobot {
         if (m_autonomousCommand != null) {
             CommandScheduler.getInstance().cancel(m_autonomousCommand);
         }
+        
+        // Reset shooter calibration values to initial state (hood=14°, flywheel=0 RPS)
+        ShootingCalculator.getCalibration().resetToInitialValues();
     }
 
     @Override

@@ -1,0 +1,35 @@
+{
+  "title": "Swerve Drive",
+  "widgets": [
+    {
+      "type": "field",
+      "params": {
+        "topic": "/Pose/robotPose",
+        "field": "2025 reefscape",
+        "robotWidth": 0.76,
+        "robotHeight": 0.76
+      }
+    },
+    {
+      "type": "graph",
+      "params": {
+        "topics": ["/DriveState/Speeds.vx", "/DriveState/Speeds.vy", "/DriveState/Speeds.omega"],
+        "names": ["Vx", "Vy", "Omega"],
+        "colors": ["green", "blue", "red"]
+      }
+    },
+    {
+      "type": "graph",
+      "params": {
+        "topics": [
+          "/DriveState/ModuleStates[0].speedMetersPerSecond",
+          "/DriveState/ModuleStates[1].speedMetersPerSecond", 
+          "/DriveState/ModuleStates[2].speedMetersPerSecond",
+          "/DriveState/ModuleStates[3].speedMetersPerSecond"
+        ],
+        "names": ["FL", "FR", "BL", "BR"],
+        "colors": ["red", "green", "blue", "yellow"]
+      }
+    }
+  ]
+}

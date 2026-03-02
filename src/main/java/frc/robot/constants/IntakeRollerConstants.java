@@ -14,13 +14,13 @@ public final class IntakeRollerConstants {
     
     // Duty Cycle Constants (-1.0 to 1.0, positive = intake)
     public static final double DEFAULT_DUTY_CYCLE = 0.5;   // 50% power when deployed (was 20 RPS / 40 = 0.5)
-    public static final double INTAKE_DUTY_CYCLE = 0.75;   // 75% power during active intake (was 30 RPS / 40 = 0.75)
-    public static final double EJECT_DUTY_CYCLE = -1.0;    // 100% reverse to eject (was -40 RPS / 40 = -1.0)
+    public static final double INTAKE_DUTY_CYCLE = 0.5;   // 75% power during active intake (was 30 RPS / 40 = 0.75)
+    public static final double EJECT_DUTY_CYCLE = -0.5;    // 100% reverse to eject (was -40 RPS / 40 = -1.0)
     
     // Legacy Speed Constants (RPS - Rotations Per Second) - DEPRECATED, use DUTY_CYCLE constants instead
     @Deprecated public static final double DEFAULT_SPEED_RPS = 20.0;
-    @Deprecated public static final double INTAKE_SPEED_RPS = 30.0;
-    @Deprecated public static final double EJECT_SPEED_RPS = -40.0;
+    @Deprecated public static final double INTAKE_SPEED_RPS = 20.0;
+    @Deprecated public static final double EJECT_SPEED_RPS = -20.0;
     
     // Position-based activation tolerance
     // Roller only runs when intake position is within this tolerance of deployed position

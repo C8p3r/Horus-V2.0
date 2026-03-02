@@ -84,7 +84,18 @@ public class Telemetry {
 
     private final double[] m_poseArray = new double[3];
 
-    /** Accept the swerve drive state and telemeterize it to SmartDashboard and SignalLogger. */
+    /** 
+     * Accept the swerve drive state and telemeterize it to SmartDashboard, NetworkTables, and SignalLogger.
+     * 
+     * FUSED POSE ESTIMATION:
+     * The state.Pose contains the FUSED pose estimate from SwerveDrivePoseEstimator which combines:
+     * - Wheel odometry from swerve module encoders (continuous, high frequency)
+     * - Vision measurements from both Limelights (periodic, latency compensated)
+     * This fused pose is published to:
+     * - NetworkTables "DriveState/Pose" for AdvantageScope/Elastic (real-time visualization)
+     * - NetworkTables "Pose/robotPose" as Field2d format
+     * - CTRE SignalLogger for post-match analysis
+     */
     public void telemeterize(SwerveDriveState state) {
         /* Telemeterize the swerve drive state */
         drivePose.set(state.Pose);

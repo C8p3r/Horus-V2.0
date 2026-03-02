@@ -58,7 +58,7 @@ public class ShootCommand {
         return Commands.sequence(
             // Phase 0: Set turret and hood angles
             Commands.parallel(
-                Commands.runOnce(() -> turretSubsystem.setTargetAngle(turretAngle), turretSubsystem),
+                Commands.runOnce(() -> turretSubsystem.setAngle(turretAngle.getDegrees()), turretSubsystem),
                 Commands.runOnce(() -> hoodSubsystem.setAngle(hoodAngle), hoodSubsystem)
             ),
             
@@ -210,7 +210,7 @@ public class ShootCommand {
         return Commands.sequence(
             // Phase 0: Set turret and hood angles
             Commands.parallel(
-                Commands.runOnce(() -> turretSubsystem.setTargetAngle(turretAngle), turretSubsystem),
+                Commands.runOnce(() -> turretSubsystem.setAngle(turretAngle.getDegrees()), turretSubsystem),
                 Commands.runOnce(() -> hoodSubsystem.setAngle(hoodAngle), hoodSubsystem)
             ),
             

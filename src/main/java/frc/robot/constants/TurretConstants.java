@@ -20,9 +20,14 @@ public final class TurretConstants {
     // Mechanical Configuration
     public static final double GEAR_RATIO = 10.0; // 10:1 reduction
     
-    // Position Limits (turret can rotate from 50° to 360°)
-    public static final double MIN_POSITION_ROTATIONS = 0.1389; // 50 degrees
-    public static final double MAX_POSITION_ROTATIONS = 1.0; // 360 degrees
+    // Position Limits - Full 360° rotation capability
+    // CCW from robot heading: 180° to -50° (230° range)
+    // CW from robot heading: 180° to 312° (132° range)  
+    // Total: 362° of rotation with 2° overlap at 180° = FULL 360° coverage, NO gaps
+    public static final double MIN_POSITION_DEGREES = -50.0; // CCW limit (310° in 0-360 notation)
+    public static final double MAX_POSITION_DEGREES = 312.0; // CW limit
+    public static final double MIN_POSITION_ROTATIONS = MIN_POSITION_DEGREES / 360.0; // -0.1389
+    public static final double MAX_POSITION_ROTATIONS = MAX_POSITION_DEGREES / 360.0; // 0.8667
     
     // Soft Limits
     public static final double SOFT_LIMIT_MARGIN_ROTATIONS = 0.005; // ~1.8 degrees
@@ -34,7 +39,7 @@ public final class TurretConstants {
     public static final boolean ENABLE_REVERSE_HARD_LIMIT = true;
     
     // PID Constants (position control)
-    public static final double kP = 28.0;
+    public static final double kP = 40.0;
     public static final double kI = 0.0;
     public static final double kD = 0.5;
     
@@ -57,6 +62,6 @@ public final class TurretConstants {
     public static final boolean ENABLE_CURRENT_LIMIT = true;
     
     // Motor Configuration
-    public static final boolean MOTOR_INVERTED = false;
+    public static final boolean MOTOR_INVERTED = true;
     public static final boolean BRAKE_MODE = true;
 }

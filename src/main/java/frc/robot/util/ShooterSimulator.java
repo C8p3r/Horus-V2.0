@@ -82,7 +82,9 @@ public class ShooterSimulator {
         double bestError = Double.MAX_VALUE;
         TrajectoryResult bestResult = null;
         
-        // Try angles from 15° to 75°
+        // Try angles from 15° to 75° (standard physics angles from horizontal)
+        // These will be converted to hood angles later: hood_angle = 90° - launch_angle
+        // Launch 15° -> Hood 75° (too high), Launch 75° -> Hood 15° (steep but usable)
         for (double angleDeg = 15.0; angleDeg <= 75.0; angleDeg += 0.5) {
             double angleRad = Math.toRadians(angleDeg);
             TrajectoryResult result = simulateTrajectory(

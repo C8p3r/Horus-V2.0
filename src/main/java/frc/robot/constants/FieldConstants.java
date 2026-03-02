@@ -13,13 +13,14 @@ public final class FieldConstants {
     
     // Field Dimensions
     private static final double FIELD_LENGTH = 16.54; // meters (blue wall to red wall)
+    private static final double FIELD_WIDTH = 8.21; // meters (side to side)
     
     // ==================== HUB TARGETS ====================
     
     /** Blue Alliance Hub - Main scoring target */
     public static final Translation3d BLUE_HUB = new Translation3d(4.7, 4.115, 2.0);
     
-    /** Red Alliance Hub - Main scoring target */
+    /** Red Alliance Hub - Main scoring target (middle of field, 10 feet from red wall) */
     public static final Translation3d RED_HUB = new Translation3d(FIELD_LENGTH - 4.7, 4.115, 2.0);
     
     // ==================== HUMAN PLAYER STATION (HPS) PASS TARGETS ====================
