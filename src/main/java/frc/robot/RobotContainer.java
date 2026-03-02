@@ -1,5 +1,39 @@
 package frc.robot;
 
+/*
+ * =====================================================================
+ * BUTTON BINDINGS OVERVIEW
+ * =====================================================================
+ * 
+ * DRIVER CONTROLLER (Xbox Controller 0):
+ *   Left Stick       - Translate robot (field-centric)
+ *   Right Stick      - Rotate robot + chassis rotation assist
+ *   Left Trigger     - Track BLUE hub + Smart shoot
+ *   Right Trigger    - Track RED hub + Smart shoot
+ *   A Button         - Smart shoot (uses current target)
+ *   Left Bumper      - Eject (hold)
+ *   Right Bumper     - Toggle intake (deploy/retract + on/off)
+ *   POV Left         - Pathfind to "Far Climb"
+ *   POV Right        - Pathfind to "Close Climb"
+ *   POV Up           - Reset field-centric heading
+ * 
+ * OPERATOR CONTROLLER (Xbox Controller 1):
+ *   A Button         - Zero turret at current position
+ *   B Button         - Manual shoot (fixed test parameters)
+ *   X Button         - Store climber (spool winch - climb)
+ *   Y Button         - Deploy climber (unspool winch)
+ *   Right Bumper     - Toggle vision processing
+ *   POV Down         - Clear target tracking
+ *   Back + X/Y       - SysId routines (drivetrain characterization)
+ *   Start + X/Y      - SysId routines (drivetrain characterization)
+ * 
+ * SPEED MODIFIERS:
+ *   - Normal: 100% speed
+ *   - Climbing: 25% speed (when climber deployed)
+ * 
+ * =====================================================================
+ */
+
 import static edu.wpi.first.units.Units.*;
 
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
@@ -25,66 +59,41 @@ import frc.robot.util.TelemetryThrottle;
 
 public class RobotContainer {
     
-    // ==================== CONSTANTS ====================
-    private static final boolean DISABLE_INTAKE_DEPLOY_MOTOR = false;
+    // ==================== CONFIGURATION CONSTANTS ====================
     
-    /**
-     * Master toggle to disable ALL telemetry and logging
-     * Set to true to disable: SmartDashboard updates, AdvantageKit logging, controller telemetry,
-     * power monitoring, CAN bus monitoring, drivetrain telemetry, and subsystem periodic telemetry
-     */
+    /** Master toggle to disable ALL telemetry and logging */
     public static final boolean DISABLE_ALL_TELEMETRY = false;
     
-    /**
-     * Toggle to control whether intake retracts during shooting sequence
-     * Set to true to retract intake while shooting (default behavior)
-     * Set to false to keep intake deployed during shooting
-     */
+    /** Shooter calibration mode: true = manual sliders, false = auto interpolation */
+    public static final boolean SHOOTER_CALIBRATION_MODE = true;
+    
+    /** Toggle to control whether intake retracts during shooting sequence */
     public static final boolean RETRACT_INTAKE_WHILE_SHOOTING = false;
     
-    /**
-     * Shooter calibration mode toggle
-     * Set to true for MANUAL CALIBRATION MODE (use dashboard sliders to tune)
-     * Set to false for AUTO MODE (use interpolated values from calibration table)
-     * 
-     * MANUAL MODE: Hood and flywheel follow ManualHood/ManualFlywheel sliders
-     * AUTO MODE: Hood and flywheel calculated from distance using calibration points
-     * 
-     * Note: This can also be toggled via dashboard (ShooterCalibration/CalibrationMode)
-     */
-    public static final boolean SHOOTER_CALIBRATION_MODE = true;
+    /** Disable intake deployment motor for testing */
+    private static final boolean DISABLE_INTAKE_DEPLOY_MOTOR = false;
+    
+    /** Climbing mode speed reduction (25% speed when climber deployed) */
+    private static final double CLIMBING_SPEED_REDUCTION = 0.25;
+    
+    // ==================== DRIVETRAIN CONSTANTS ====================
     
     private final double maxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
     private final double maxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond);
     
-    // Climbing mode: Reduced speed for fine adjustments when climber is deployed
-    private static final double CLIMBING_SPEED_REDUCTION = 0.25; // 25% speed when climbing
-    
-    // ==================== SWERVE REQUESTS ====================
-    private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric()
-            .withDeadband(maxSpeed * 0.1)
-            .withRotationalDeadband(maxAngularRate * 0.1)
-            .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
-    private final SwerveRequest.SwerveDriveBrake brake = new SwerveRequest.SwerveDriveBrake();
-    private final SwerveRequest.PointWheelsAt point = new SwerveRequest.PointWheelsAt();
-    private final SwerveRequest.Idle idle = new SwerveRequest.Idle();
-      
-    // ==================== TELEMETRY ====================
-    private final Telemetry logger = new Telemetry(maxSpeed);
-    
     // ==================== CONTROLLERS ====================
+    
     private final CommandXboxController joystick = new CommandXboxController(0);
     private final CommandXboxController operatorController = new CommandXboxController(1);
     
     // ==================== SUBSYSTEMS ====================
-    // Drivetrain
-    public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
     
-    // Vision & Autonomous
+    // Drivetrain & Vision
+    public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
     private final VisionSubsystem visionSubsystem = new VisionSubsystem(drivetrain);
     private final PathPlannerSubsystem pathPlannerSubsystem = new PathPlannerSubsystem(drivetrain);
     
-    // Shooter (turret needs robot pose and chassis speeds for predictive tracking)
+    // Shooter System
     private final TurretSubsystem turretSubsystem = new TurretSubsystem(
         () -> drivetrain.getState().Pose,
         () -> drivetrain.getState().Speeds
@@ -92,7 +101,7 @@ public class RobotContainer {
     private final FlywheelSubsystem flywheelSubsystem = new FlywheelSubsystem();
     private final HoodSubsystem hoodSubsystem = new HoodSubsystem();
     
-    // Intake & Indexer
+    // Intake System
     private final IntakeRollerSubsystem intakeRollerSubsystem = new IntakeRollerSubsystem();
     private final IntakePositionSubsystem intakePositionSubsystem = new IntakePositionSubsystem();
     private final IndexerSubsystem indexerSubsystem = new IndexerSubsystem();
@@ -103,197 +112,76 @@ public class RobotContainer {
     // LEDs
     private final CANdleSubsystem candleSubsystem = new CANdleSubsystem();
     
-    //UTIL
-    private final TelemetryThrottle robotContainerTelemetryThrottle = new TelemetryThrottle(0.2);
+    // ==================== SWERVE REQUESTS ====================
     
-    // ==================== AUTONOMOUS CHOOSER ====================
+    private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric()
+            .withDeadband(maxSpeed * 0.1)
+            .withRotationalDeadband(maxAngularRate * 0.1)
+            .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
+    private final SwerveRequest.SwerveDriveBrake brake = new SwerveRequest.SwerveDriveBrake();
+    private final SwerveRequest.PointWheelsAt point = new SwerveRequest.PointWheelsAt();
+    private final SwerveRequest.Idle idle = new SwerveRequest.Idle();
+    
+    // ==================== UTILITIES ====================
+    
+    private final Telemetry logger = new Telemetry(maxSpeed);
+    private final TelemetryThrottle robotContainerTelemetryThrottle = new TelemetryThrottle(0.2);
     private final SendableChooser<Command> autoChooser = new SendableChooser<>();
 
-    public RobotContainer() {
-     
-        // Connect vision subsystem to drivetrain for vision-primary pose estimation
-        drivetrain.setVisionSubsystem(visionSubsystem);
+    // ==================== CONSTRUCTOR ====================
     
+    public RobotContainer() {
+        // Initialize subsystem connections
+        drivetrain.setVisionSubsystem(visionSubsystem);
+        
+        // Apply configuration flags
         if (DISABLE_INTAKE_DEPLOY_MOTOR) {
             intakePositionSubsystem.disableDeployMotor();
         }
-        
-        // Set initial calibration mode from constant
         ShootingCalculator.getCalibration().setCalibrationMode(SHOOTER_CALIBRATION_MODE);
         
+        // Configure robot
         configureFuelSim();
         configureAutoChooser();
         configureTurretCalibrationButtons();
-        configureBindings();
         configureDefaultCommands();
+        configureBindings();
     }
     
-    // ==================== CONFIGURATION ====================
-    
-    /**
-     * Configure default commands for subsystems
-     */
-    private void configureDefaultCommands() {
-        // Default command does nothing - intake subsystems maintain their last commanded state
-        // The TalonFX motors will hold their last setpoint until commanded otherwise
-        intakeRollerSubsystem.setDefaultCommand(
-            Commands.run(() -> {
-                // Empty run command - just requires the subsystem so other commands can interrupt
-                // Motors maintain their last duty cycle or stop command
-            }, intakeRollerSubsystem)
-        );
-        
-        indexerSubsystem.setDefaultCommand(
-            Commands.run(() -> {
-                // Empty run command - maintains last commanded state
-            }, indexerSubsystem)
-        );
-        
-        // Turret default command: Continuously track the current target
-        // The target is set via button presses (see configureShooterControls)
-        turretSubsystem.setDefaultCommand(
-            Commands.run(() -> {
-                // Tracking logic is handled automatically in TurretSubsystem.periodic()
-                // This command just ensures the subsystem is always required
-            }, turretSubsystem).withName("Turret Tracking")
-        );
-        
-        // Hood default command: Follow calibration system values (manual or auto)
-        hoodSubsystem.setDefaultCommand(
-            Commands.run(() -> {
-                var calibration = ShootingCalculator.getCalibration();
-                
-                // In calibration mode, ALWAYS use manual values regardless of target
-                if (calibration.isCalibrationMode()) {
-                    double hoodAngle = calibration.getManualHoodAngle();
-                    hoodSubsystem.setAngle(Rotation2d.fromDegrees(hoodAngle));
-                    System.out.println("[HOOD] Calibration Mode: " + hoodAngle + "°");
-                } else {
-                    // Auto mode - require target
-                    var target = turretSubsystem.getTarget();
-                    if (target != null) {
-                        var robotPose = drivetrain.getState().Pose;
-                        double distance = robotPose.getTranslation().getDistance(target.toTranslation2d());
-                        calibration.setCurrentDistance(distance);
-                        calibration.updateDashboard(distance);
-                        
-                        double hoodAngle = calibration.getHoodAngle(distance);
-                        hoodSubsystem.setAngle(Rotation2d.fromDegrees(hoodAngle));
-                    } else {
-                        // No target - pack to 0°
-                        hoodSubsystem.setAngle(Rotation2d.fromDegrees(0));
-                    }
-                }
-            }, hoodSubsystem).withName("Hood Auto/Manual Tracking")
-        );
-        
-        // Flywheel default command: Follow calibration system values (manual or auto)
-        flywheelSubsystem.setDefaultCommand(
-            Commands.run(() -> {
-                var calibration = ShootingCalculator.getCalibration();
-                
-                // In calibration mode, ALWAYS use manual values regardless of target
-                if (calibration.isCalibrationMode()) {
-                    double flywheelRPS = calibration.getManualFlywheelVelocity();
-                    flywheelSubsystem.setVelocity(flywheelRPS);
-                    System.out.println("[FLYWHEEL] Calibration Mode: " + flywheelRPS + " RPS");
-                } else {
-                    // Auto mode - require target
-                    var target = turretSubsystem.getTarget();
-                    if (target != null) {
-                        var robotPose = drivetrain.getState().Pose;
-                        double distance = robotPose.getTranslation().getDistance(target.toTranslation2d());
-                        
-                        double flywheelRPS = calibration.getFlywheelVelocity(distance);
-                        flywheelSubsystem.setVelocity(flywheelRPS);
-                    } else {
-                        // No target - stop flywheel
-                        flywheelSubsystem.stop();
-                    }
-                }
-            }, flywheelSubsystem).withName("Flywheel Auto/Manual Tracking")
-        );
-        
-        // Indexer default command: Follow calibration system values in manual mode
-        indexerSubsystem.setDefaultCommand(
-            Commands.run(() -> {
-                var calibration = ShootingCalculator.getCalibration();
-                
-                // In calibration mode, use manual slider values
-                if (calibration.isCalibrationMode()) {
-                    double floorDutyCycle = calibration.getManualFloorIndexer();
-                    double fireDutyCycle = calibration.getManualFireIndexer();
-                    indexerSubsystem.setFloorIndexerDutyCycle(floorDutyCycle);
-                    indexerSubsystem.setFireIndexerDutyCycle(fireDutyCycle);
-                    System.out.println("[INDEXER] Calibration Mode: Floor=" + floorDutyCycle + " Fire=" + fireDutyCycle);
-                } else {
-                    // Auto mode - stop indexers (actual shooting commands will control them)
-                    indexerSubsystem.stopAll();
-                }
-            }, indexerSubsystem).withName("Indexer Manual Control")
-        );
-    }
-    
-    /**
-     * Publishes turret calibration buttons to SmartDashboard
-     */
-    private void configureTurretCalibrationButtons() {
-        if (DISABLE_ALL_TELEMETRY) {
-            return; // Skip SmartDashboard updates when telemetry is disabled
-        }
-        
-        // Button to zero turret at current position
-        SmartDashboard.putData("Turret: Zero Here", 
-            Commands.runOnce(() -> turretSubsystem.zeroTurret(), turretSubsystem)
-                .ignoringDisable(true)
-                .withName("Zero Turret")
-        );
-        
-        // Button to set turret position to 180 degrees (useful if turret is backwards)
-        SmartDashboard.putData("Turret: Set to 180°", 
-            Commands.runOnce(() -> {
-                // Set encoder position to 180 degrees (0.5 rotations)
-                turretSubsystem.setEncoderPosition(Rotation2d.fromDegrees(180.0));
-            }, turretSubsystem)
-                .ignoringDisable(true)
-                .withName("Set Turret to 180°")
-        );
-    }
+    // ==================== FUEL SIMULATION ====================
     
     private void configureFuelSim() {
-        FuelSim.getInstance().registerRobot(
-            0.76,  // Robot width (meters)
-            0.76,  // Robot length (meters)
-            0.30,  // Bumper height (meters)
-            () -> drivetrain.getState().Pose,
-            () -> drivetrain.getState().Speeds
-        );
+        FuelSim.getInstance().registerRobot(0.76, 0.76, 0.30,
+            () -> drivetrain.getState().Pose, () -> drivetrain.getState().Speeds);
         FuelSim.getInstance().start();
     }
-
-    private void configureBindings() {
-        configureDrivetrainControls();
-        configureShooterControls();
-        configureIntakeControls();
-        configureClimberControls();
-        configureVisionControls();
-        configurePathPlannerControls();
+    
+    // ==================== DASHBOARD BUTTONS ====================
+    
+    private void configureTurretCalibrationButtons() {
+        if (DISABLE_ALL_TELEMETRY) return;
+        
+        SmartDashboard.putData("Turret: Zero Here", 
+            Commands.runOnce(() -> turretSubsystem.zeroTurret(), turretSubsystem)
+                .ignoringDisable(true).withName("Zero Turret"));
+        SmartDashboard.putData("Turret: Set to 180°", 
+            Commands.runOnce(() -> turretSubsystem.setEncoderPosition(Rotation2d.fromDegrees(180.0)), turretSubsystem)
+                .ignoringDisable(true).withName("Set Turret to 180°"));
+    }
+    // ==================== DEFAULT COMMANDS ====================
+    
+    private void configureDefaultCommands() {
+        configureDrivetrainDefaultCommand();
+        configureIntakeDefaultCommands();
+        configureShooterDefaultCommands();
     }
     
-    // ==================== DRIVETRAIN CONTROLS ====================
-    
-    private void configureDrivetrainControls() {
-        // Default command: field-centric drive with reduced speed when climber deployed
-        // Also includes chassis rotation assist when turret is tracking and target is in deadzone
+    private void configureDrivetrainDefaultCommand() {
+        // Field-centric drive with speed reduction when climbing and chassis rotation assist
         drivetrain.setDefaultCommand(
             drivetrain.applyRequest(() -> {
-                // Apply speed reduction when climber is deployed for fine adjustments
                 double speedMultiplier = climberSubsystem.isDeployed() ? CLIMBING_SPEED_REDUCTION : 1.0;
-                
-                // Get chassis rotation assist from turret (non-zero when target in deadzone)
                 double chassisRotationAssist = turretSubsystem.getChassisRotationAssist();
-                
-                // Combine driver input with chassis rotation assist
                 double driverRotation = -joystick.getRightX() * maxAngularRate * speedMultiplier;
                 double totalRotation = driverRotation + chassisRotationAssist;
                 
@@ -302,7 +190,110 @@ public class RobotContainer {
                     .withRotationalRate(totalRotation);
             })
         );
-
+    }
+    
+    private void configureIntakeDefaultCommands() {
+        // Intake roller maintains last commanded state
+        intakeRollerSubsystem.setDefaultCommand(
+            Commands.run(() -> {}, intakeRollerSubsystem)
+                .withName("Intake Roller Idle")
+        );
+    }
+    
+    private void configureShooterDefaultCommands() {
+        // Turret continuously tracks target (tracking logic in TurretSubsystem.periodic())
+        turretSubsystem.setDefaultCommand(
+            Commands.run(() -> {}, turretSubsystem)
+                .withName("Turret Tracking")
+        );
+        
+        // Hood follows calibration values (manual sliders or auto interpolation)
+        hoodSubsystem.setDefaultCommand(
+            Commands.run(() -> {
+                updateHoodFromCalibration();
+            }, hoodSubsystem).withName("Hood Tracking")
+        );
+        
+        // Flywheel follows calibration values (manual sliders or auto interpolation)
+        flywheelSubsystem.setDefaultCommand(
+            Commands.run(() -> {
+                updateFlywheelFromCalibration();
+            }, flywheelSubsystem).withName("Flywheel Tracking")
+        );
+        
+        // Indexer follows manual calibration sliders in calibration mode
+        indexerSubsystem.setDefaultCommand(
+            Commands.run(() -> {
+                updateIndexerFromCalibration();
+            }, indexerSubsystem).withName("Indexer Manual Control")
+        );
+    }
+    
+    private void updateHoodFromCalibration() {
+        var calibration = ShootingCalculator.getCalibration();
+        
+        if (calibration.isCalibrationMode()) {
+            // Manual mode: Use dashboard slider
+            double hoodAngle = calibration.getManualHoodAngle();
+            hoodSubsystem.setAngle(Rotation2d.fromDegrees(hoodAngle));
+        } else {
+            // Auto mode: Interpolate based on distance to target
+            var target = turretSubsystem.getTarget();
+            if (target != null) {
+                var robotPose = drivetrain.getState().Pose;
+                double distance = robotPose.getTranslation().getDistance(target.toTranslation2d());
+                calibration.setCurrentDistance(distance);
+                calibration.updateDashboard(distance);
+                hoodSubsystem.setAngle(Rotation2d.fromDegrees(calibration.getHoodAngle(distance)));
+            } else {
+                hoodSubsystem.setAngle(Rotation2d.fromDegrees(0)); // Pack hood
+            }
+        }
+    }
+    
+    private void updateFlywheelFromCalibration() {
+        var calibration = ShootingCalculator.getCalibration();
+        
+        if (calibration.isCalibrationMode()) {
+            // Manual mode: Use dashboard slider
+            flywheelSubsystem.setVelocity(calibration.getManualFlywheelVelocity());
+        } else {
+            // Auto mode: Interpolate based on distance to target
+            var target = turretSubsystem.getTarget();
+            if (target != null) {
+                var robotPose = drivetrain.getState().Pose;
+                double distance = robotPose.getTranslation().getDistance(target.toTranslation2d());
+                flywheelSubsystem.setVelocity(calibration.getFlywheelVelocity(distance));
+            } else {
+                flywheelSubsystem.stop();
+            }
+        }
+    }
+    
+    private void updateIndexerFromCalibration() {
+        var calibration = ShootingCalculator.getCalibration();
+        
+        if (calibration.isCalibrationMode()) {
+            // Manual mode: Use dashboard sliders
+            indexerSubsystem.setFloorIndexerDutyCycle(calibration.getManualFloorIndexer());
+            indexerSubsystem.setFireIndexerDutyCycle(calibration.getManualFireIndexer());
+        } else {
+            // Auto mode: Stop (shooting commands will control indexers)
+            indexerSubsystem.stopAll();
+        }
+    }
+    
+    // ==================== BUTTON BINDINGS ====================
+    
+    private void configureBindings() {
+        configureDrivetrainControls();
+        configureVisionControls();
+        configureShooterControls();
+        configureIntakeControls();
+        configureClimberControls();
+        configurePathPlannerControls();
+    }
+    private void configureDrivetrainControls() {
         // Idle while disabled
         RobotModeTriggers.disabled().whileTrue(
             drivetrain.applyRequest(() -> idle).ignoringDisable(true)
@@ -316,257 +307,146 @@ public class RobotContainer {
             point.withModuleDirection(new Rotation2d(-joystick.getLeftY(), -joystick.getLeftX()))
         ));
 
-        // SysId routines (back/start + X/Y)
-        joystick.back().and(joystick.y()).whileTrue(drivetrain.sysIdDynamic(Direction.kForward));
-        joystick.back().and(joystick.x()).whileTrue(drivetrain.sysIdDynamic(Direction.kReverse));
-        joystick.start().and(joystick.y()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kForward));
-        joystick.start().and(joystick.x()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kReverse));
-
         if (!DISABLE_ALL_TELEMETRY) {
             drivetrain.registerTelemetry(logger::telemeterize);
         }
     }
     
-    // ==================== VISION CONTROLS ====================
-    
     private void configureVisionControls() {
-        // Left bumper (operator): Reset field-centric heading
-        operatorController.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
+        // Reset field-centric heading (moved to driver POV Up)
+        joystick.povUp().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
         
-        // Right bumper (operator): Toggle vision processing
+        // SysId routines (moved to operator controller)
+        operatorController.back().and(operatorController.y()).whileTrue(drivetrain.sysIdDynamic(Direction.kForward));
+        operatorController.back().and(operatorController.x()).whileTrue(drivetrain.sysIdDynamic(Direction.kReverse));
+        operatorController.start().and(operatorController.y()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kForward));
+        operatorController.start().and(operatorController.x()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kReverse));
+        
         operatorController.rightBumper().onTrue(Commands.runOnce(() -> visionSubsystem.toggleVision()));
     }
     
-    // ==================== PATH PLANNER CONTROLS ====================
-    
     private void configurePathPlannerControls() {
-        // D-pad left: Pathfind to "Far Climb"
         joystick.povLeft().onTrue(pathPlannerSubsystem.pathfindThenFollowPath("Far Climb"));
-        
-        // D-pad right: Pathfind to "Close Climb"
         joystick.povRight().onTrue(pathPlannerSubsystem.pathfindThenFollowPath("Close Climb"));
     }
     
-    // ==================== SHOOTER CONTROLS ====================
-    
     private void configureShooterControls() {
-        // ===== AUTOMATIC TARGET TRACKING =====
-        // Driver left trigger: Track BLUE alliance hub
-        joystick.leftTrigger().onTrue(
-            Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.BLUE_HUB))
-        );
-        
-        // Driver right trigger: Track RED alliance hub
-        joystick.rightTrigger().onTrue(
-            Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.RED_HUB))
-        );
-        
-        // Driver Y button: Disable tracking (turret holds position)
-        joystick.y().onTrue(
-            Commands.runOnce(() -> turretSubsystem.setTarget(null))
-        );
-        
-        // ===== SMART SHOOTING =====
-        // Driver A button: Smart shoot at tracked target (auto-calculate parameters)
-        joystick.a().onTrue(
+        // Target tracking and smart shooting with triggers
+        joystick.leftTrigger().onTrue(Commands.sequence(
+            Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.BLUE_HUB)),
             createSmartShootCommand()
-        );
+        ));
+        joystick.rightTrigger().onTrue(Commands.sequence(
+            Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.RED_HUB)),
+            createSmartShootCommand()
+        ));
         
-        // Driver B button: Manual shoot with fixed parameters (for testing)
-        joystick.b().onTrue(
-            ShootCommand.shoot(
-                flywheelSubsystem, indexerSubsystem, turretSubsystem, hoodSubsystem,
-                intakeRollerSubsystem, intakePositionSubsystem,
-                60.0, // Fixed flywheel velocity
-                Rotation2d.fromDegrees(0.0), // Fixed turret angle
-                Rotation2d.fromDegrees(25.0) // Fixed hood angle
-            )
-        );
+        // Driver A button also does smart shoot (uses already-set target)
+        joystick.a().onTrue(createSmartShootCommand());
         
-        // Operator A button: Zero turret to current position (for calibration)
-        operatorController.a().onTrue(
-            Commands.runOnce(() -> turretSubsystem.zeroTurret(), turretSubsystem)
-        );
+        // Operator controls
+        operatorController.povDown().onTrue(Commands.runOnce(() -> turretSubsystem.setTarget(null))); // Clear target
+        operatorController.b().onTrue(ShootCommand.shoot( // Manual shoot
+            flywheelSubsystem, indexerSubsystem, turretSubsystem, hoodSubsystem,
+            intakeRollerSubsystem, intakePositionSubsystem,
+            60.0, Rotation2d.fromDegrees(0.0), Rotation2d.fromDegrees(25.0)
+        ));
+        
+        // Calibration
+        operatorController.a().onTrue(Commands.runOnce(() -> turretSubsystem.zeroTurret(), turretSubsystem));
     }
-    
-    /**
-     * Creates a smart shooting command that automatically calculates optimal parameters
-     * based on distance to target. Optimizes for minimum flywheel velocity.
-     */
     private Command createSmartShootCommand() {
         return Commands.defer(() -> {
-            // Get current target
             var target = turretSubsystem.getTarget();
-            if (target == null) {
-                System.out.println("No target set for smart shoot!");
-                return Commands.none();
-            }
+            if (target == null) return Commands.none();
             
-            // Calculate optimal shooting parameters
-            var robotPose = drivetrain.getState().Pose;
-            var solution = ShootingCalculator.calculate(robotPose, target);
+            var solution = ShootingCalculator.calculate(drivetrain.getState().Pose, target);
+            if (!solution.isValid) return Commands.none();
             
-            if (!solution.isValid) {
-                System.out.println("No valid shooting solution found!");
-                return Commands.none();
-            }
-            
-            // Log the solution
-            System.out.println(String.format(
-                "Smart Shoot: Distance=%.2fm, Turret=%.1f°, Hood=%.1f°, Flywheel=%.1f RPS, Entry=%.1f°",
-                solution.distance, solution.turretAngleDegrees, solution.hoodAngleDegrees,
-                solution.flywheelVelocityRPS, solution.entryAngleDegrees
-            ));
-            
-            // Return shoot command with calculated parameters
             return ShootCommand.shoot(
                 flywheelSubsystem, indexerSubsystem, turretSubsystem, hoodSubsystem,
                 intakeRollerSubsystem, intakePositionSubsystem,
-                solution.flywheelVelocityRPS,
-                solution.getTurretAngle(),
-                solution.getHoodAngle()
+                solution.flywheelVelocityRPS, solution.getTurretAngle(), solution.getHoodAngle()
             );
         }, java.util.Set.of(turretSubsystem, drivetrain));
     }
     
-    // ==================== INTAKE CONTROLS ====================
-    
     private void configureIntakeControls() {
-        // Right bumper (driver): Toggle intake position and power
-        // Press once: deploy and turn on
-        // Press again: retract and turn off
-        joystick.rightBumper().onTrue(
-            IntakeCommand.toggleIntake(intakeRollerSubsystem, intakePositionSubsystem, indexerSubsystem)
-        );
-        
-        // Left bumper (driver): Eject (while held)
-        joystick.leftBumper().whileTrue(
-            IntakeCommand.eject(intakeRollerSubsystem, indexerSubsystem)
-        );
+        joystick.rightBumper().onTrue(IntakeCommand.toggleIntake(
+            intakeRollerSubsystem, intakePositionSubsystem, indexerSubsystem));
+        joystick.leftBumper().whileTrue(IntakeCommand.eject(
+            intakeRollerSubsystem, indexerSubsystem));
     }
     
-    // ==================== CLIMBER CONTROLS ====================
-    
     private void configureClimberControls() {
-        // Y button (operator): Deploy climber (unspool winch)
-        operatorController.y().onTrue(
-            ClimberCommand.deployClimber(climberSubsystem, intakePositionSubsystem, intakeRollerSubsystem, 
-                indexerSubsystem, flywheelSubsystem, turretSubsystem, hoodSubsystem)
-        );
-        
-        // X button (operator): Store climber (spool winch - actively climb)
-        operatorController.x().onTrue(
-            ClimberCommand.storeClimber(climberSubsystem, intakePositionSubsystem, intakeRollerSubsystem,
-                indexerSubsystem, flywheelSubsystem, turretSubsystem, hoodSubsystem)
-        );
+        operatorController.y().onTrue(ClimberCommand.deployClimber(
+            climberSubsystem, intakePositionSubsystem, intakeRollerSubsystem, 
+            indexerSubsystem, flywheelSubsystem, turretSubsystem, hoodSubsystem));
+        operatorController.x().onTrue(ClimberCommand.storeClimber(
+            climberSubsystem, intakePositionSubsystem, intakeRollerSubsystem,
+            indexerSubsystem, flywheelSubsystem, turretSubsystem, hoodSubsystem));
     }
     
     // ==================== AUTONOMOUS ====================
     
-    /**
-     * Configures the autonomous chooser with PathPlanner auto routines
-     */
     private void configureAutoChooser() {
-        // Default option: Do nothing
         autoChooser.setDefaultOption("None", Commands.none());
-        
-        // PathPlanner auto routines (from deploy/pathplanner/autos/*.auto files)
         autoChooser.addOption("Example Auto", pathPlannerSubsystem.getAutonomousCommand("Example Auto"));
-    
-        // Simple test auto
-        autoChooser.addOption("Drive Forward", 
-            Commands.sequence(
-                drivetrain.runOnce(() -> drivetrain.seedFieldCentric(Rotation2d.kZero)),
-                drivetrain.applyRequest(() ->
-                    drive.withVelocityX(0.5)
-                        .withVelocityY(0)
-                        .withRotationalRate(0)
-                ).withTimeout(3.0),
-                drivetrain.applyRequest(() -> idle)
-            )
-        );
+        autoChooser.addOption("Drive Forward", Commands.sequence(
+            drivetrain.runOnce(() -> drivetrain.seedFieldCentric(Rotation2d.kZero)),
+            drivetrain.applyRequest(() -> drive.withVelocityX(0.5).withVelocityY(0).withRotationalRate(0))
+                .withTimeout(3.0),
+            drivetrain.applyRequest(() -> idle)
+        ));
         
-        // Put chooser on SmartDashboard
         if (!DISABLE_ALL_TELEMETRY) {
             SmartDashboard.putData("Auto Chooser", autoChooser);
         }
     }
     
     public Command getAutonomousCommand() {
-        // Return the selected autonomous command from the chooser
         return autoChooser.getSelected();
     }
     
-    // ==================== GETTERS ====================
+    // ==================== PERIODIC UPDATES ====================
     
-    public PathPlannerSubsystem getPathPlannerSubsystem() {
-        return pathPlannerSubsystem;
-    }
-    
-    // ==================== PERIODIC ====================
-    
-    // Flywheel ready state tracking for rumble
     private boolean lastFlywheelReadyState = false;
-    
-    // Velocity dip detection for orange flash
     private double lastFlywheelVelocity = 0.0;
-    private static final double VELOCITY_DIP_THRESHOLD = 5; // RPS drop to trigger flash
     private int orangeFlashCounter = 0;
-    private static final int ORANGE_FLASH_DURATION = 10; // cycles (~200ms)
+    private static final double VELOCITY_DIP_THRESHOLD = 5.0;
+    private static final int ORANGE_FLASH_DURATION = 10;
     
     public void periodic() {
-        if (!DISABLE_ALL_TELEMETRY) {
-            
-            // Throttle SmartDashboard updates to prevent loop overruns
-            if (robotContainerTelemetryThrottle.shouldUpdate()) {
-                // Display climbing mode status (throttled to 5 Hz)
-                SmartDashboard.putBoolean("Climbing Mode (Reduced Speed)", climberSubsystem.isDeployed());
-            }
+        if (!DISABLE_ALL_TELEMETRY && robotContainerTelemetryThrottle.shouldUpdate()) {
+            SmartDashboard.putBoolean("Climbing Mode", climberSubsystem.isDeployed());
         }
         updateVelocityDipDetection();
         updateLEDFeedback();
         updateControllerRumble();
     }
     
-    /**
-     * Detects velocity dips in flywheel (note being shot)
-     */
     private void updateVelocityDipDetection() {
         double currentVelocity = flywheelSubsystem.getVelocityRPS();
         
-        // Only check for dips when flywheel is supposed to be spinning
         if (flywheelSubsystem.getTargetVelocityRPS() > 0.1) {
             double velocityDrop = lastFlywheelVelocity - currentVelocity;
-            
-            // Detect significant velocity drop (note shot)
             if (velocityDrop > VELOCITY_DIP_THRESHOLD && orangeFlashCounter == 0) {
-                orangeFlashCounter = ORANGE_FLASH_DURATION; // Start flash
+                orangeFlashCounter = ORANGE_FLASH_DURATION;
             }
         }
         
-        // Countdown flash timer
-        if (orangeFlashCounter > 0) {
-            orangeFlashCounter--;
-        }
-        
+        if (orangeFlashCounter > 0) orangeFlashCounter--;
         lastFlywheelVelocity = currentVelocity;
     }
     
-    /**
-     * Updates controller rumble based on robot state
-     */
     private void updateControllerRumble() {
-        // Check if flywheel just reached target speed
         boolean flywheelReady = flywheelSubsystem.atTargetVelocity() 
                                 && flywheelSubsystem.getTargetVelocityRPS() > 0.1;
         
-        // Trigger rumble when flywheel becomes ready (rising edge)
         if (flywheelReady && !lastFlywheelReadyState) {
-            // Short rumble burst to indicate ready to shoot
             joystick.getHID().setRumble(edu.wpi.first.wpilibj.GenericHID.RumbleType.kBothRumble, 1.0);
             operatorController.getHID().setRumble(edu.wpi.first.wpilibj.GenericHID.RumbleType.kBothRumble, 1.0);
             
-            // Schedule rumble to stop after 0.3 seconds
             new Thread(() -> {
                 try {
                     Thread.sleep(300);
@@ -581,90 +461,35 @@ public class RobotContainer {
         lastFlywheelReadyState = flywheelReady;
     }
     
-    // ==================== LED FEEDBACK ====================
-    
-    /**
-     * Updates LED colors based on robot state
-     * Provides visual feedback for shooting, intake, and other states
-     */
     private void updateLEDFeedback() {
-        // CRITICAL OVERRIDE: Flywheel overheating - rapid red blink
+        // Priority order: Overheating > Climbing > Note scored > Shooting > Intake > Aiming > Idle
         if (flywheelSubsystem.isOverheating()) {
             candleSubsystem.setRapidRedBlink();
-            return;
-        }
-        
-        // HIGHEST PRIORITY: Climber deployed - slow rainbow (waiting to climb)
-        if (climberSubsystem.isFullyDeployed() && climberSubsystem.isDeployed()) {
+        } else if (climberSubsystem.isFullyDeployed() && climberSubsystem.isDeployed()) {
             candleSubsystem.setSlowRainbow();
-            return;
-        }
-        
-        // HIGHEST PRIORITY: Actively climbing - rapid rainbow
-        if (climberSubsystem.isDeployed() && !climberSubsystem.isRetracted()) {
+        } else if (climberSubsystem.isDeployed() && !climberSubsystem.isRetracted()) {
             candleSubsystem.setRapidRainbow();
-            return;
-        }
-        
-        // HIGH PRIORITY: Velocity dip detected - orange flash (note scored!)
-        if (orangeFlashCounter > 0) {
-            candleSubsystem.setRGB(255, 165, 0); // Bright orange flash
-            return;
-        }
-        
-        // Priority 1: Shooting state (highest priority)
-        if (flywheelSubsystem.getTargetVelocityRPS() > 0.1) {
+        } else if (orangeFlashCounter > 0) {
+            candleSubsystem.setRGB(255, 165, 0);
+        } else if (flywheelSubsystem.getTargetVelocityRPS() > 0.1) {
             if (flywheelSubsystem.atTargetVelocity()) {
-                // Flywheel ready - bright pulsing green (fast pulse = ready to shoot!)
                 candleSubsystem.setRGBWithModulation(0, 255, 0, 3.0, 0.6, 1.0);
             } else {
-                // Flywheel spinning up - breathing yellow (slower = wait)
                 candleSubsystem.setRGBWithModulation(255, 255, 0, 1.5, 0.4, 0.9);
             }
-            return;
-        }
-        
-        // Priority 2: Intake running (check if velocity is non-zero)
-        if (Math.abs(intakeRollerSubsystem.getVelocity()) > 1.0) {
-            // Intake active - pulsing blue
+        } else if (Math.abs(intakeRollerSubsystem.getVelocity()) > 1.0) {
             candleSubsystem.setRGBWithModulation(0, 0, 255, 2.5, 0.5, 1.0);
-            return;
-        }
-        
-        // Priority 3: Aiming (check if turret/hood are at target positions)
-        if (turretSubsystem.atTarget() && hoodSubsystem.atTargetAngle()) {
-            // Aimed and ready - bright pulsing purple
+        } else if (turretSubsystem.atTarget() && hoodSubsystem.atTargetAngle()) {
             candleSubsystem.setRGBWithModulation(128, 0, 255, 2.0, 0.7, 1.0);
-            return;
+        } else {
+            candleSubsystem.setRGBWithModulation(80, 80, 80, 0.5, 0.1, 0.3);
         }
-        
-        // Default: Robot idle - slow breathing dim white
-        candleSubsystem.setRGBWithModulation(80, 80, 80, 0.5, 0.1, 0.3);
     }
     
     // ==================== SUBSYSTEM ACCESSORS ====================
     
-    /**
-     * Get the vision subsystem for pose initialization
-     * @return The vision subsystem
-     */
-    public VisionSubsystem getVisionSubsystem() {
-        return visionSubsystem;
-    }
-    
-    /**
-     * Get the turret subsystem
-     * @return The turret subsystem
-     */
-    public TurretSubsystem getTurretSubsystem() {
-        return turretSubsystem;
-    }
-    
-    /**
-     * Get the drivetrain subsystem for pose initialization
-     * @return The drivetrain subsystem
-     */
-    public CommandSwerveDrivetrain getDrivetrain() {
-        return drivetrain;
-    }
+    public VisionSubsystem getVisionSubsystem() { return visionSubsystem; }
+    public TurretSubsystem getTurretSubsystem() { return turretSubsystem; }
+    public CommandSwerveDrivetrain getDrivetrain() { return drivetrain; }
+    public PathPlannerSubsystem getPathPlannerSubsystem() { return pathPlannerSubsystem; }
 }
