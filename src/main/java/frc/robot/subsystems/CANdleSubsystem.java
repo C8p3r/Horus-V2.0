@@ -4,212 +4,278 @@ import static edu.wpi.first.units.Units.*;
 
 import com.ctre.phoenix6.CANBus;
 import com.ctre.phoenix6.configs.CANdleConfiguration;
-import com.ctre.phoenix6.controls.SingleFadeAnimation;
+import com.ctre.phoenix6.controls.FireAnimation;
+import com.ctre.phoenix6.controls.LarsonAnimation;
+import com.ctre.phoenix6.controls.RainbowAnimation;
+import com.ctre.phoenix6.controls.SolidColor;
+import com.ctre.phoenix6.controls.StrobeAnimation;
 import com.ctre.phoenix6.hardware.CANdle;
+import com.ctre.phoenix6.signals.AnimationDirectionValue;
+import com.ctre.phoenix6.signals.LarsonBounceValue;
 import com.ctre.phoenix6.signals.RGBWColor;
 
-import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import frc.robot.constants.CANdleConstants;
-import frc.robot.util.TelemetryThrottle;
 
 /**
- * CANdle LED subsystem with breathing animation
+ * Two-Zone LED Control System
  * 
- * AUTOMATIC GRB REMAPPING FOR WS2812B/NEOPIXEL STRIPS:
- * This subsystem automatically converts RGB input to GRB output in software.
- * You can call setRGB(255, 0, 0) for red, and it will correctly display red
- * on GRB LED strips by internally swapping the channels.
+ * ZONE 1 - CANdle (LEDs 0-7): Debugging feedback
+ * - Rainbow idle when all systems at rest
+ * - Green 1-LED Larson when intake active
+ * - Yellow 1-LED Larson when outtaking
+ * - Blue strobe when shooting active
  * 
- * Color Channel Mapping:
- * - Your RED input (R) -> Sent as GREEN channel to strip
- * - Your GREEN input (G) -> Sent as RED channel to strip  
- * - Your BLUE input (B) -> Sent as BLUE channel to strip
- * 
- * This means:
- * - setRGB(255, 0, 0) displays RED (sent as 0, 255, 0 to GRB strip)
- * - setRGB(0, 255, 0) displays GREEN (sent as 255, 0, 0 to GRB strip)
- * - setRGB(0, 0, 255) displays BLUE (sent as 0, 0, 255 to GRB strip)
- * 
- * NO PHOENIX TUNER CONFIGURATION NEEDED - handled in software!
- * Just make sure your CANdle firmware is up to date.
+ * ZONE 2 - Lightbar (LEDs 8-35): Visual feedback
+ * - RGB cycle when disabled
+ * - White Larson when idle (size 15)
+ * - Green Larson when intaking (size 15)
+ * - Yellow Larson when outtaking (size 15)
+ * - Fire animation when shooting (intensity scales with flywheel, blue when at speed)
  */
 public class CANdleSubsystem extends SubsystemBase {
+    // Hardware
     private final CANBus canBus;
     private final CANdle candle;
-    private final TelemetryThrottle telemetryThrottle;
-    private SingleFadeAnimation currentAnimation;
     
-    // Track current LED state for dashboard visualization
-    private int currentRed = 255;
-    private int currentGreen = 255;
-    private int currentBlue = 255;
-    private String currentMode = "Idle";
+    // Zone definitions
+    private static final int CANDLE_START = 0;
+    private static final int CANDLE_END = 7;
+    private static final int CANDLE_COUNT = 8; 
+    private static final int LIGHTBAR_START = 8;
+    private static final int LIGHTBAR_END = 35;
+    private static final int LIGHTBAR_COUNT = 35; 
+    
+    // ZONE 1 - CANdle debugging animations
+    private final RainbowAnimation candleRainbow = new RainbowAnimation(CANDLE_START, CANDLE_COUNT)
+        .withSlot(0)
+        .withBrightness(0.8)
+        .withDirection(AnimationDirectionValue.Forward)
+        .withFrameRate(Hertz.of(100));
+    
+    private final LarsonAnimation candleIntake = new LarsonAnimation(CANDLE_START, CANDLE_COUNT)
+        .withSlot(0)
+        .withColor(new RGBWColor(0, 255, 0, 0)) // Green
+        .withSize(1) // Single LED
+        .withBounceMode(LarsonBounceValue.Front)
+        .withFrameRate(Hertz.of(80));
+    
+    private final LarsonAnimation candleOuttake = new LarsonAnimation(CANDLE_START, CANDLE_COUNT)
+        .withSlot(0)
+        .withColor(new RGBWColor(255, 255, 0, 0)) // Yellow
+        .withSize(1) // Single LED
+        .withBounceMode(LarsonBounceValue.Front)
+        .withFrameRate(Hertz.of(80));
+    
+    private final StrobeAnimation candleShooting = new StrobeAnimation(CANDLE_START, CANDLE_COUNT)
+        .withSlot(0)
+        .withColor(new RGBWColor(0, 100, 255, 0)) // Blue
+        .withFrameRate(Hertz.of(20));
+    
+    // ZONE 2 - Lightbar visual animations (GRB color order for external strips)
+    private final RainbowAnimation lightbarDisabled = new RainbowAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
+        .withSlot(1)
+        .withBrightness(0.5)
+        .withDirection(AnimationDirectionValue.Forward)
+        .withFrameRate(Hertz.of(60));
+    
+    private final LarsonAnimation lightbarIdle = new LarsonAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
+        .withSlot(1)
+        .withColor(new RGBWColor(253, 255, 255, 0)) // White (GRB: 255,253,255)
+        .withSize(15)
+        .withBounceMode(LarsonBounceValue.Front)
+        .withFrameRate(Hertz.of(63));
+    
+    private final LarsonAnimation lightbarIntake = new LarsonAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
+        .withSlot(1)
+        .withColor(new RGBWColor(255, 0, 0, 0)) // Green (GRB: 0,255,0) - swapped R and G
+        .withSize(15)
+        .withBounceMode(LarsonBounceValue.Front)
+        .withFrameRate(Hertz.of(63));
+    
+    private final LarsonAnimation lightbarOuttake = new LarsonAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
+        .withSlot(1)
+        .withColor(new RGBWColor(255, 255, 0, 0)) // Yellow (GRB: 255,255,0) - R and G both on
+        .withSize(15)
+        .withBounceMode(LarsonBounceValue.Front)
+        .withFrameRate(Hertz.of(63));
+    
+    private final FireAnimation lightbarFire = new FireAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
+        .withSlot(1)
+        .withBrightness(1.0)
+        .withDirection(AnimationDirectionValue.Forward)
+        .withSparking(0.522)
+        .withCooling(0.286)
+        .withFrameRate(Hertz.of(43));
+    
+    private final FireAnimation lightbarFireBlue = new FireAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
+        .withSlot(1)
+        .withBrightness(1.0)
+        .withDirection(AnimationDirectionValue.Forward)
+        .withSparking(0.522)
+        .withCooling(0.286)
+        .withFrameRate(Hertz.of(43));
+    
+    // State tracking
+    private enum RobotState {
+        DISABLED,
+        IDLE,
+        INTAKING,
+        OUTTAKING,
+        SHOOTING_SPINUP,
+        SHOOTING_READY
+    }
+    
+    private RobotState currentState = RobotState.IDLE;
+    private RobotState lastAppliedState = null; // Track last applied state to avoid redundant updates
+    private double currentFlywheelProgress = 0.0;
+    private double lastAppliedProgress = -1.0; // Track last applied progress
     
     public CANdleSubsystem() {
         canBus = new CANBus(CANdleConstants.CANBUS_NAME);
         candle = new CANdle(CANdleConstants.CANDLE_ID, canBus);
         
-        // Throttle telemetry to 5 Hz (200ms) to prevent network I/O blocking
-        telemetryThrottle = new TelemetryThrottle(0.2);
-        
-        // Configure CANdle with basic settings
-        // Note: Phoenix 6 CANdle API uses RGB by default
-        // LED strip type is auto-detected by the CANdle hardware
+        // Configure CANdle
         CANdleConfiguration config = new CANdleConfiguration();
         candle.getConfigurator().apply(config);
+        
+        // Set initial state
+        setIdle();
     }
     
     /**
-     * Sets solid color on all LEDs
-     * Automatically remaps RGB input to GRB output for WS2812B/NeoPixel strips
-     * @param r Red value (0-255) - sent as Green to strip
-     * @param g Green value (0-255) - sent as Red to strip
-     * @param b Blue value (0-255) - sent as Blue to strip
+     * Set LED state to idle (all systems at rest)
+     * CANdle: Rainbow
+     * Lightbar: White Larson
      */
-    public void setRGB(int r, int g, int b) {
-        currentRed = r;
-        currentGreen = g;
-        currentBlue = b;
-        currentMode = "Solid";
-        
-        // Remap RGB to GRB: R->G, G->R, B->B
-        candle.setControl(
-            new com.ctre.phoenix6.controls.SolidColor(0, CANdleConstants.TOTAL_LED_COUNT)
-                .withColor(new RGBWColor(g, r, b)) // Swapped: send (G, R, B)
-        );
+    public void setIdle() {
+        currentState = RobotState.IDLE;
     }
     
     /**
-     * Sets breathing/pulsing color with hardware-accelerated animation
-     * Automatically remaps RGB input to GRB output for WS2812B/NeoPixel strips
-     * @param r Red value (0-255) - sent as Green to strip
-     * @param g Green value (0-255) - sent as Red to strip
-     * @param b Blue value (0-255) - sent as Blue to strip
-     * @param speed Breathing speed (Hz) - higher = faster breathing
-     * @param minBright Minimum brightness (0-255)
-     * @param maxBright Maximum brightness (0-255)
+     * Set LED state to intaking
+     * CANdle: Green 1-LED Larson
+     * Lightbar: Green Larson (size 15)
      */
-    public void setRGBWithModulation(int r, int g, int b, double speed, double minBright, double maxBright) {
-        currentRed = r;
-        currentGreen = g;
-        currentBlue = b;
-        currentMode = "Breathing";
-        
-        // Remap RGB to GRB: R->G, G->R, B->B
-        // Create breathing animation
-        currentAnimation = new SingleFadeAnimation(0, CANdleConstants.TOTAL_LED_COUNT)
-            .withSlot(0)
-            .withColor(new RGBWColor(g, r, b)) // Swapped: send (G, R, B)
-            .withFrameRate(Hertz.of(speed * 100)); // 10x faster: speed * 100
-        
-        candle.setControl(currentAnimation);
+    public void setIntaking() {
+        currentState = RobotState.INTAKING;
     }
     
     /**
-     * Convenience method with default modulation (20Hz breathing - 10x faster)
+     * Set LED state to outtaking/ejecting
+     * CANdle: Yellow 1-LED Larson
+     * Lightbar: Yellow Larson (size 15)
      */
-    public void setRGBWithModulation(int r, int g, int b) {
-        setRGBWithModulation(r, g, b, 2.0, 50, 255);
+    public void setOuttaking() {
+        currentState = RobotState.OUTTAKING;
     }
     
     /**
-     * Sets rapid red blinking for emergency/overheat warning
-     * Automatically remaps to GRB output
-     * Blinks at 10Hz (10 times per second)
+     * Set LED state to shooting (spinning up)
+     * CANdle: Blue strobe
+     * Lightbar: Fire animation (normal color)
+     * @param flywheelProgress Progress from 0.0 to 1.0 (used to scale intensity)
      */
-    public void setRapidRedBlink() {
-        currentRed = 255;
-        currentGreen = 0;
-        currentBlue = 0;
-        currentMode = "ALERT";
-        
-        // Remap RGB to GRB: Red(255,0,0) -> send as (0,255,0) for GRB strips
-        // Use SingleFadeAnimation for rapid blinking effect
-        currentAnimation = new SingleFadeAnimation(0, CANdleConstants.TOTAL_LED_COUNT)
-            .withSlot(0)
-            .withColor(new RGBWColor(0, 255, 0)) // Swapped: send (G=0, R=255, B=0) for red
-            .withFrameRate(Hertz.of(1000)); // Very fast for rapid blink effect
-        
-        candle.setControl(currentAnimation);
+    public void setShootingSpinup(double flywheelProgress) {
+        currentState = RobotState.SHOOTING_SPINUP;
+        currentFlywheelProgress = flywheelProgress;
     }
     
     /**
-     * Sets slow rainbow pattern (climber deployed - waiting)
+     * Set LED state to shooting (at speed)
+     * CANdle: Blue strobe
+     * Lightbar: Blue fire animation
      */
-    public void setSlowRainbow() {
-        currentMode = "Slow Rainbow";
-        
-        // Use RainbowAnimation for smooth rainbow effect
-        candle.setControl(
-            new com.ctre.phoenix6.controls.RainbowAnimation(0, CANdleConstants.TOTAL_LED_COUNT)
-                .withSlot(0)
-                .withBrightness(1.0)
-        );
+    public void setShootingReady() {
+        currentState = RobotState.SHOOTING_READY;
     }
     
     /**
-     * Sets rapid rainbow pattern (actively climbing)
-     * Uses the same rainbow but will be perceived as "active" during climbing
+     * Set LED state to disabled
+     * CANdle: Rainbow (slower)
+     * Lightbar: RGB cycle
      */
-    public void setRapidRainbow() {
-        currentMode = "Rapid Rainbow";
-        
-        // Use RainbowAnimation - same effect, different context (actively climbing)
-        candle.setControl(
-            new com.ctre.phoenix6.controls.RainbowAnimation(0, CANdleConstants.TOTAL_LED_COUNT)
-                .withSlot(0)
-                .withBrightness(1.0)
-        );
+    public void setDisabled() {
+        currentState = RobotState.DISABLED;
     }
     
     @Override
     public void periodic() {
-        // Apply animation each cycle if it exists
-        if (currentAnimation != null) {
-            candle.setControl(currentAnimation);
+        // Auto-detect disabled state
+        if (DriverStation.isDisabled() && currentState != RobotState.DISABLED) {
+            setDisabled();
         }
         
-        // Throttle telemetry updates to prevent Status loop blocking
-        if (!telemetryThrottle.shouldUpdate()) {
-            return; // Skip this update cycle
+        // Only update LEDs when state changes or progress changes significantly
+        boolean stateChanged = currentState != lastAppliedState;
+        boolean progressChanged = Math.abs(currentFlywheelProgress - lastAppliedProgress) > 0.05; // 5% threshold
+        
+        if (!stateChanged && !progressChanged) {
+            return; // No update needed, prevent flickering
         }
         
-        // Publish CANdle status to SmartDashboard for visualization (throttled to 5 Hz)
-        SmartDashboard.putString("CANdle/Mode", currentMode);
-        SmartDashboard.putNumber("CANdle/Red", currentRed);
-        SmartDashboard.putNumber("CANdle/Green", currentGreen);
-        SmartDashboard.putNumber("CANdle/Blue", currentBlue);
+        // Apply animations based on current state
+        switch (currentState) {
+            case DISABLED:
+                if (stateChanged) {
+                    candle.setControl(candleRainbow);
+                    candle.setControl(lightbarDisabled);
+                }
+                break;
+                
+            case IDLE:
+                if (stateChanged) {
+                    candle.setControl(candleRainbow);
+                    candle.setControl(lightbarIdle);
+                }
+                break;
+                
+            case INTAKING:
+                if (stateChanged) {
+                    candle.setControl(candleIntake);
+                    candle.setControl(lightbarIntake);
+                }
+                break;
+                
+            case OUTTAKING:
+                if (stateChanged) {
+                    candle.setControl(candleOuttake);
+                    candle.setControl(lightbarOuttake);
+                }
+                break;
+                
+            case SHOOTING_SPINUP:
+                if (stateChanged || progressChanged) {
+                    candle.setControl(candleShooting);
+                    // Create scaled fire animation based on flywheel progress
+                    FireAnimation scaledFire = new FireAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
+                        .withSlot(1)
+                        .withBrightness(Math.max(0.3, currentFlywheelProgress))
+                        .withDirection(AnimationDirectionValue.Forward)
+                        .withSparking(0.522)
+                        .withCooling(0.286)
+                        .withFrameRate(Hertz.of(43));
+                    candle.setControl(scaledFire);
+                    lastAppliedProgress = currentFlywheelProgress;
+                }
+                break;
+                
+            case SHOOTING_READY:
+                if (stateChanged) {
+                    candle.setControl(candleShooting);
+                    candle.setControl(lightbarFireBlue);
+                }
+                break;
+        }
         
-        // Create a color string for easier visualization
-        String colorHex = String.format("#%02X%02X%02X", currentRed, currentGreen, currentBlue);
-        SmartDashboard.putString("CANdle/Color (Hex)", colorHex);
-        
-        // Publish a visual indicator (colored text representation)
-        String colorBar = "█████████████████████";
-        SmartDashboard.putString("CANdle/Visual", colorBar + " " + getColorName());
+        lastAppliedState = currentState;
     }
     
     /**
-     * Get a human-readable color name based on current RGB values
+     * Get current LED state
      */
-    private String getColorName() {
-        if (currentRed > 200 && currentGreen < 100 && currentBlue < 100) {
-            return "RED";
-        } else if (currentRed < 100 && currentGreen > 200 && currentBlue < 100) {
-            return "GREEN";
-        } else if (currentRed < 100 && currentGreen < 100 && currentBlue > 200) {
-            return "BLUE";
-        } else if (currentRed > 200 && currentGreen > 200 && currentBlue < 100) {
-            return "YELLOW";
-        } else if (currentRed > 200 && currentGreen < 100 && currentBlue > 200) {
-            return "PURPLE";
-        } else if (currentRed > 150 && currentGreen > 100 && currentBlue < 100) {
-            return "ORANGE";
-        } else if (currentRed > 200 && currentGreen > 200 && currentBlue > 200) {
-            return "WHITE";
-        } else {
-            return "Custom";
-        }
+    public RobotState getState() {
+        return currentState;
     }
 }

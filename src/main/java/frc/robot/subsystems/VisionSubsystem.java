@@ -6,6 +6,8 @@ import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.networktables.StructArrayPublisher;
@@ -367,11 +369,17 @@ public class VisionSubsystem extends SubsystemBase {
             return;
         }
         
+        // Apply 180 degree rotation correction to the vision measurement
+        Pose2d correctedPose = new Pose2d(
+            poseEstimate.pose.getTranslation(),
+            poseEstimate.pose.getRotation().plus(Rotation2d.fromDegrees(180.0))
+        );
+        
         // Calculate dynamic standard deviations based on measurement quality
         Matrix<N3, N1> stdDevs = calculateDynamicStdDevs(poseEstimate);
         
-        // Add vision measurement to drivetrain's pose estimator
-        drivetrain.addVisionMeasurement(poseEstimate.pose, poseEstimate.timestampSeconds, stdDevs);
+        // Add corrected vision measurement to drivetrain's pose estimator
+        drivetrain.addVisionMeasurement(correctedPose, poseEstimate.timestampSeconds, stdDevs);
     }
     
     /**
@@ -388,10 +396,13 @@ public class VisionSubsystem extends SubsystemBase {
      * The alliance color does NOT change the field coordinate system.
      * 
      * NOTE: No rotation correction needed - botpose_wpiblue already returns correct orientation
+     * 
+     * NETWORKTABLES KEY: Uses "botpose_orb_wpiblue" which is the MegaTag1 pose estimate
      */
     private LimelightHelpers.PoseEstimate getLimelightPoseEstimateForAlliance(String limelightName) {
         // Use MegaTag1 for BOTH cameras for maximum stability
         // MegaTag1 uses ORB feature tracking which provides smoother estimates
+        // This reads from NetworkTables key: "botpose_orb_wpiblue"
         return LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag1(limelightName);
     }
     
@@ -521,10 +532,16 @@ public class VisionSubsystem extends SubsystemBase {
         // Front Limelight
         SmartDashboard.putBoolean("Vision/Front/HasTarget", LimelightHelpers.hasTarget(frontLimelightName));
         SmartDashboard.putNumber("Vision/Front/NumTags", frontEstimate.tagCount);
+        SmartDashboard.putNumber("Vision/Front/TagSpan", frontEstimate.tagSpan);
+        SmartDashboard.putNumber("Vision/Front/AvgDist", frontEstimate.avgTagDist);
+        SmartDashboard.putString("Vision/Front/Mode", "MegaTag1 (botpose_orb_wpiblue)");
         
         // Back Limelight
         SmartDashboard.putBoolean("Vision/Back/HasTarget", LimelightHelpers.hasTarget(backLimelightName));
         SmartDashboard.putNumber("Vision/Back/NumTags", backEstimate.tagCount);
+        SmartDashboard.putNumber("Vision/Back/TagSpan", backEstimate.tagSpan);
+        SmartDashboard.putNumber("Vision/Back/AvgDist", backEstimate.avgTagDist);
+        SmartDashboard.putString("Vision/Back/Mode", "MegaTag1 (botpose_orb_wpiblue)");
         
         // Overall Status
         SmartDashboard.putBoolean("Vision/Enabled", useVision);
@@ -534,35 +551,63 @@ public class VisionSubsystem extends SubsystemBase {
     /**
      * Publishes vision poses to NetworkTables for AdvantageScope visualization
      * This allows you to see the raw vision estimates on the field
+     * Applies 180 degree rotation correction to match the actual robot orientation
      */
     private void publishVisionPoses() {
         // Get pose estimates from both cameras
         LimelightHelpers.PoseEstimate frontEstimate = getLimelightPoseEstimateForAlliance(frontLimelightName);
         LimelightHelpers.PoseEstimate backEstimate = getLimelightPoseEstimateForAlliance(backLimelightName);
         
-        // Publish 2D poses for field visualization
+        // Apply 180 degree rotation correction to visualization poses
+        Pose2d frontCorrectedPose = null;
+        Pose3d frontCorrectedPose3d = null;
         if (LimelightHelpers.hasTarget(frontLimelightName) && frontEstimate.tagCount > 0) {
-            frontVisionPosePublisher.set(frontEstimate.pose);
-        }
-        if (LimelightHelpers.hasTarget(backLimelightName) && backEstimate.tagCount > 0) {
-            backVisionPosePublisher.set(backEstimate.pose);
+            frontCorrectedPose = new Pose2d(
+                frontEstimate.pose.getTranslation(),
+                frontEstimate.pose.getRotation().plus(Rotation2d.fromDegrees(180.0))
+            );
+            frontCorrectedPose3d = new Pose3d(
+                frontEstimate.pose3d.getTranslation(),
+                frontEstimate.pose3d.getRotation().rotateBy(new Rotation3d(0, 0, Math.toRadians(180.0)))
+            );
         }
         
-        // Publish 3D poses for 3D visualization in AdvantageScope
-        if (LimelightHelpers.hasTarget(frontLimelightName) && frontEstimate.tagCount > 0) {
-            frontVisionPose3dPublisher.set(frontEstimate.pose3d);
-        }
+        Pose2d backCorrectedPose = null;
+        Pose3d backCorrectedPose3d = null;
         if (LimelightHelpers.hasTarget(backLimelightName) && backEstimate.tagCount > 0) {
-            backVisionPose3dPublisher.set(backEstimate.pose3d);
+            backCorrectedPose = new Pose2d(
+                backEstimate.pose.getTranslation(),
+                backEstimate.pose.getRotation().plus(Rotation2d.fromDegrees(180.0))
+            );
+            backCorrectedPose3d = new Pose3d(
+                backEstimate.pose3d.getTranslation(),
+                backEstimate.pose3d.getRotation().rotateBy(new Rotation3d(0, 0, Math.toRadians(180.0)))
+            );
         }
         
-        // Publish array of all valid vision poses
+        // Publish 2D poses for field visualization (with rotation correction)
+        if (frontCorrectedPose != null) {
+            frontVisionPosePublisher.set(frontCorrectedPose);
+        }
+        if (backCorrectedPose != null) {
+            backVisionPosePublisher.set(backCorrectedPose);
+        }
+        
+        // Publish 3D poses for 3D visualization in AdvantageScope (with rotation correction)
+        if (frontCorrectedPose3d != null) {
+            frontVisionPose3dPublisher.set(frontCorrectedPose3d);
+        }
+        if (backCorrectedPose3d != null) {
+            backVisionPose3dPublisher.set(backCorrectedPose3d);
+        }
+        
+        // Publish array of all valid vision poses (with rotation correction)
         List<Pose2d> allPoses = new ArrayList<>();
-        if (LimelightHelpers.hasTarget(frontLimelightName) && frontEstimate.tagCount > 0) {
-            allPoses.add(frontEstimate.pose);
+        if (frontCorrectedPose != null) {
+            allPoses.add(frontCorrectedPose);
         }
-        if (LimelightHelpers.hasTarget(backLimelightName) && backEstimate.tagCount > 0) {
-            allPoses.add(backEstimate.pose);
+        if (backCorrectedPose != null) {
+            allPoses.add(backCorrectedPose);
         }
         allVisionPosesPublisher.set(allPoses.toArray(new Pose2d[0]));
         
@@ -666,7 +711,8 @@ public class VisionSubsystem extends SubsystemBase {
      * Get the best vision pose for initialization
      * Simply returns the pose from the camera with the most tags visible
      * NO FILTERING - used for initial pose setup
-     * @return The vision pose, or null if no cameras see tags
+     * APPLIES 180 DEGREE ROTATION CORRECTION
+     * @return The vision pose (with 180° rotation correction), or null if no cameras see tags
      */
     public Pose2d getBestVisionPose() {
         // Get estimates from both cameras
@@ -686,34 +732,50 @@ public class VisionSubsystem extends SubsystemBase {
         if (frontHasTags && backHasTags) {
             // Both see tags - use the one with more tags
             if (frontEstimate.tagCount >= backEstimate.tagCount) {
+                Pose2d correctedPose = new Pose2d(
+                    frontEstimate.pose.getTranslation(),
+                    frontEstimate.pose.getRotation().plus(Rotation2d.fromDegrees(180.0))
+                );
                 System.out.println("VISION: Using FRONT camera for initialization | Tags: " + frontEstimate.tagCount + 
                     " | Pose: " + String.format("(%.2f, %.2f, %.1f°)", 
-                        frontEstimate.pose.getX(), 
-                        frontEstimate.pose.getY(), 
-                        frontEstimate.pose.getRotation().getDegrees()));
-                return frontEstimate.pose;
+                        correctedPose.getX(), 
+                        correctedPose.getY(), 
+                        correctedPose.getRotation().getDegrees()));
+                return correctedPose;
             } else {
+                Pose2d correctedPose = new Pose2d(
+                    backEstimate.pose.getTranslation(),
+                    backEstimate.pose.getRotation().plus(Rotation2d.fromDegrees(180.0))
+                );
                 System.out.println("VISION: Using BACK camera for initialization | Tags: " + backEstimate.tagCount + 
                     " | Pose: " + String.format("(%.2f, %.2f, %.1f°)", 
-                        backEstimate.pose.getX(), 
-                        backEstimate.pose.getY(), 
-                        backEstimate.pose.getRotation().getDegrees()));
-                return backEstimate.pose;
+                        correctedPose.getX(), 
+                        correctedPose.getY(), 
+                        correctedPose.getRotation().getDegrees()));
+                return correctedPose;
             }
         } else if (frontHasTags) {
+            Pose2d correctedPose = new Pose2d(
+                frontEstimate.pose.getTranslation(),
+                frontEstimate.pose.getRotation().plus(Rotation2d.fromDegrees(180.0))
+            );
             System.out.println("VISION: Using FRONT camera for initialization | Tags: " + frontEstimate.tagCount + 
                 " | Pose: " + String.format("(%.2f, %.2f, %.1f°)", 
-                    frontEstimate.pose.getX(), 
-                    frontEstimate.pose.getY(), 
-                    frontEstimate.pose.getRotation().getDegrees()));
-            return frontEstimate.pose;
+                    correctedPose.getX(), 
+                    correctedPose.getY(), 
+                    correctedPose.getRotation().getDegrees()));
+            return correctedPose;
         } else {
+            Pose2d correctedPose = new Pose2d(
+                backEstimate.pose.getTranslation(),
+                backEstimate.pose.getRotation().plus(Rotation2d.fromDegrees(180.0))
+            );
             System.out.println("VISION: Using BACK camera for initialization | Tags: " + backEstimate.tagCount + 
                 " | Pose: " + String.format("(%.2f, %.2f, %.1f°)", 
-                    backEstimate.pose.getX(), 
-                    backEstimate.pose.getY(), 
-                    backEstimate.pose.getRotation().getDegrees()));
-            return backEstimate.pose;
+                    correctedPose.getX(), 
+                    correctedPose.getY(), 
+                    correctedPose.getRotation().getDegrees()));
+            return correctedPose;
         }
     }
     

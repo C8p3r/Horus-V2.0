@@ -3,14 +3,13 @@ package frc.robot.util;
 import java.util.ArrayList;
 import java.util.List;
 
-import edu.wpi.first.math.interpolation.InterpolatingDoubleTreeMap;
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableEntry;
 import edu.wpi.first.networktables.NetworkTableInstance;
 
 /**
- * Manages shooter calibration data and interpolation.
- * Allows manual tuning via dashboard and interpolates between calibration points.
+ * Manages shooter calibration data using a lookup table.
+ * Allows manual tuning via dashboard and uses nearest calibration point for shooting.
  */
 public class ShooterCalibration {
     
@@ -32,12 +31,9 @@ public class ShooterCalibration {
         }
     }
     
-    // Interpolation maps
-    private final InterpolatingDoubleTreeMap hoodAngleMap;
-    private final InterpolatingDoubleTreeMap flywheelVelocityMap;
-    
-    // Calibration points list
+    // Calibration points list (lookup table)
     private final List<CalibrationPoint> calibrationPoints;
+    private final List<CalibrationPoint> fixedHoodCalibrationPoints;
     
     // NetworkTables for Elastic dashboard
     private final NetworkTable calibrationTable;
@@ -48,11 +44,12 @@ public class ShooterCalibration {
     private final NetworkTableEntry currentDistanceEntry;
     private final NetworkTableEntry recordButtonEntry;
     private final NetworkTableEntry calibrationModeEntry;
+    private final NetworkTableEntry fixedHoodModeEntry;
+    private final NetworkTableEntry fixedHoodAngleEntry;
     
     public ShooterCalibration() {
-        hoodAngleMap = new InterpolatingDoubleTreeMap();
-        flywheelVelocityMap = new InterpolatingDoubleTreeMap();
         calibrationPoints = new ArrayList<>();
+        fixedHoodCalibrationPoints = new ArrayList<>();
         
         // Setup NetworkTables
         calibrationTable = NetworkTableInstance.getDefault().getTable("ShooterCalibration");
@@ -63,6 +60,8 @@ public class ShooterCalibration {
         currentDistanceEntry = calibrationTable.getEntry("CurrentDistance");
         recordButtonEntry = calibrationTable.getEntry("RecordPoint");
         calibrationModeEntry = calibrationTable.getEntry("CalibrationMode");
+        fixedHoodModeEntry = calibrationTable.getEntry("FixedHoodMode");
+        fixedHoodAngleEntry = calibrationTable.getEntry("FixedHoodAngle");
         
         // Set default values
         manualHoodEntry.setDouble(14.0);  // Start at minimum angle
@@ -72,23 +71,56 @@ public class ShooterCalibration {
         currentDistanceEntry.setDouble(0.0);
         recordButtonEntry.setBoolean(false);
         calibrationModeEntry.setBoolean(false);  // Start in auto mode
+        fixedHoodModeEntry.setBoolean(true);  // Start with hood enabled
+        fixedHoodAngleEntry.setDouble(10.0);  // Default fixed angle
         
         // Load default calibration points
         loadDefaultCalibration();
+        loadFixedHoodCalibration();
     }
     
     /**
      * Loads default calibration points as a starting baseline
      */
+    
     private void loadDefaultCalibration() {
-        // These are reasonable starting points - tune them empirically!
-        // Hood angle: 14° = flattest (close shots), 40° = steepest (far shots)
-        addCalibrationPoint(1.0, 14.0, 35.0);   // Close shot - flat angle, lower velocity
-        addCalibrationPoint(2.0, 20.0, 45.0);   
-        addCalibrationPoint(3.0, 26.0, 55.0);   
-        addCalibrationPoint(4.0, 32.0, 65.0);   
-        addCalibrationPoint(5.0, 40.0, 75.0);   // Far shot - steep angle, higher velocity
-        
+        // // These are reasonable starting points - tune them empirically!
+        // // Hood angle: 14° = flattest (close shots), 40° = steepest (far shots)
+        // addCalibrationPoint(1.26, 14.00, 39.84); // Point 1 (Measured MIN)
+        // addCalibrationPoint(1.50, 15.91, 40.30);
+        // addCalibrationPoint(1.75, 17.90, 40.78);
+        // addCalibrationPoint(2.00, 19.89, 41.26);
+        // addCalibrationPoint(2.25, 21.87, 41.74);
+        // addCalibrationPoint(2.50, 23.86, 42.22);
+        // addCalibrationPoint(2.75, 27.85, 42.70);
+        // addCalibrationPoint(3.00, 29.83, 43.18);
+        // addCalibrationPoint(3.25, 31.82, 43.66);
+        // addCalibrationPoint(3.42, 31.18, 43.99); // Point 2 (Measured)
+        // addCalibrationPoint(3.50, 31.82, 44.14);
+        // addCalibrationPoint(3.75, 33.80, 44.62);
+        // addCalibrationPoint(4.00, 35.79, 45.10);
+        // addCalibrationPoint(4.25, 37.78, 45.58);
+        // addCalibrationPoint(4.50, 39.77, 46.06);
+
+                // Format: addCalibrationPoint(Distance_m, Hood_Angle, Flywheel_RPM);
+        addCalibrationPoint(1.26, 7.80, 42.50);  // Near Min: Lower angle, higher speed
+        addCalibrationPoint(1.50, 8.52, 43.15);
+        addCalibrationPoint(1.75, 9.27, 43.83);
+        addCalibrationPoint(2.00, 10.02, 44.51);
+        addCalibrationPoint(2.25, 10.77, 45.19);
+        addCalibrationPoint(2.50, 11.52, 45.87);
+        addCalibrationPoint(2.75, 12.27, 46.55);
+        addCalibrationPoint(3.00, 13.02, 47.23);
+        addCalibrationPoint(3.25, 13.77, 47.91);
+        addCalibrationPoint(3.42, 14.28, 48.37); // Previous measured point distance
+        addCalibrationPoint(3.50, 14.52, 48.59);
+        addCalibrationPoint(3.75, 15.27, 49.27);
+        addCalibrationPoint(4.00, 16.02, 49.95);
+        addCalibrationPoint(4.25, 16.77, 50.63);
+        addCalibrationPoint(4.50, 17.52, 51.31);
+        addCalibrationPoint(4.75, 18.27, 51.99);
+        addCalibrationPoint(5.00, 19.00, 52.67); // Hood Max reached at 5 meters
+    
         System.out.println("[ShooterCalibration] Loaded default calibration:");
         for (CalibrationPoint point : calibrationPoints) {
             System.out.println("  " + point);
@@ -96,7 +128,49 @@ public class ShooterCalibration {
     }
     
     /**
-     * Adds a calibration point and rebuilds interpolation maps
+     * Loads fixed hood calibration points (hood stays at fixed angle, only flywheel changes)
+     */
+    private void loadFixedHoodCalibration() {
+        // Fixed hood at 10° - only flywheel velocity varies with distance
+        // Higher velocities needed at further distances
+      // Fixed Hood @ 10 Degrees
+            addFixedHoodCalibrationPoint(1.615, 10, 43.50); // Measured Point 1
+            addFixedHoodCalibrationPoint(1.75, 10, 44.42);
+            addFixedHoodCalibrationPoint(2.00, 10, 46.13);
+            addFixedHoodCalibrationPoint(2.25, 10, 47.84);
+            addFixedHoodCalibrationPoint(2.537, 10, 49.80); // Measured Point 2
+            addFixedHoodCalibrationPoint(2.75, 10, 50.75);
+            addFixedHoodCalibrationPoint(3.00, 10, 51.87);
+            addFixedHoodCalibrationPoint(3.25, 10, 52.99);
+            addFixedHoodCalibrationPoint(3.40, 10, 53.67); // Measured Point 3
+            addFixedHoodCalibrationPoint(3.50, 10, 54.13);
+            addFixedHoodCalibrationPoint(3.75, 10, 55.28);
+            addFixedHoodCalibrationPoint(4.00, 10, 56.44); // Measured Point 4
+            addFixedHoodCalibrationPoint(4.25, 10, 58.05);
+            addFixedHoodCalibrationPoint(4.50, 10, 59.66);
+            addFixedHoodCalibrationPoint(4.75, 10, 61.27);
+            addFixedHoodCalibrationPoint(5.00, 10, 62.88);
+            addFixedHoodCalibrationPoint(5.105, 10, 67.22); // Measured Point 5
+            addFixedHoodCalibrationPoint(5.25, 10, 64.50);
+            addFixedHoodCalibrationPoint(5.50, 10, 66.11);
+            addFixedHoodCalibrationPoint(5.63, 10, 66.95); // Measured Point 5
+        System.out.println("[ShooterCalibration] Loaded fixed hood calibration (Hood fixed at 10°):");
+        for (CalibrationPoint point : fixedHoodCalibrationPoints) {
+            System.out.println("  " + point);
+        }
+    }
+    
+    /**
+     * Adds a fixed hood calibration point
+     */
+    private void addFixedHoodCalibrationPoint(double distance, double hoodAngle, double flywheelRPS) {
+        CalibrationPoint point = new CalibrationPoint(distance, hoodAngle, flywheelRPS);
+        fixedHoodCalibrationPoints.add(point);
+        fixedHoodCalibrationPoints.sort((a, b) -> Double.compare(a.distance, b.distance));
+    }
+    
+    /**
+     * Adds a calibration point to the lookup table
      */
     public void addCalibrationPoint(double distance, double hoodAngle, double flywheelRPS) {
         CalibrationPoint point = new CalibrationPoint(distance, hoodAngle, flywheelRPS);
@@ -107,46 +181,89 @@ public class ShooterCalibration {
         // Add new point
         calibrationPoints.add(point);
         
-        // Sort by distance
+        // Sort by distance for easier debugging
         calibrationPoints.sort((a, b) -> Double.compare(a.distance, b.distance));
-        
-        // Rebuild interpolation maps
-        rebuildMaps();
         
         System.out.println("[ShooterCalibration] Added calibration point: " + point);
     }
     
     /**
-     * Rebuilds the interpolation maps from calibration points
+     * Checks if fixed hood mode is enabled
      */
-    private void rebuildMaps() {
-        hoodAngleMap.clear();
-        flywheelVelocityMap.clear();
-        
-        for (CalibrationPoint point : calibrationPoints) {
-            hoodAngleMap.put(point.distance, point.hoodAngle);
-            flywheelVelocityMap.put(point.distance, point.flywheelRPS);
-        }
+    public boolean isFixedHoodMode() {
+        return fixedHoodModeEntry.getBoolean(false);
     }
     
     /**
-     * Gets interpolated hood angle for a given distance
+     * Gets the fixed hood angle setting
+     */
+    public double getFixedHoodAngle() {
+        return fixedHoodAngleEntry.getDouble(10.0);
+    }
+    
+    /**
+     * Sets fixed hood mode on or off
+     */
+    public void setFixedHoodMode(boolean enabled) {
+        fixedHoodModeEntry.setBoolean(enabled);
+    }
+    
+    /**
+     * Sets the fixed hood angle
+     */
+    public void setFixedHoodAngle(double angle) {
+        fixedHoodAngleEntry.setDouble(angle);
+    }
+    
+    /**
+     * Finds the nearest calibration point to the given distance
+     */
+    private CalibrationPoint findNearestPoint(double distance) {
+        List<CalibrationPoint> dataSet = isFixedHoodMode() ? fixedHoodCalibrationPoints : calibrationPoints;
+        
+        if (dataSet.isEmpty()) {
+            return null;
+        }
+        
+        CalibrationPoint nearest = dataSet.get(0);
+        double minDiff = Math.abs(nearest.distance - distance);
+        
+        for (CalibrationPoint point : dataSet) {
+            double diff = Math.abs(point.distance - distance);
+            if (diff < minDiff) {
+                minDiff = diff;
+                nearest = point;
+            }
+        }
+        
+        return nearest;
+    }
+    
+    /**
+     * Gets hood angle for a given distance using nearest neighbor lookup
+     * If in fixed hood mode, returns the fixed hood angle
      */
     public double getHoodAngle(double distance) {
-        if (calibrationPoints.isEmpty()) {
+        if (isFixedHoodMode()) {
+            return fixedHoodAngleEntry.getDouble(10.0);
+        }
+        
+        CalibrationPoint nearest = findNearestPoint(distance);
+        if (nearest == null) {
             return 25.0; // Default fallback
         }
-        return hoodAngleMap.get(distance);
+        return nearest.hoodAngle;
     }
     
     /**
-     * Gets interpolated flywheel velocity for a given distance
+     * Gets flywheel velocity for a given distance using nearest neighbor lookup
      */
     public double getFlywheelVelocity(double distance) {
-        if (calibrationPoints.isEmpty()) {
+        CalibrationPoint nearest = findNearestPoint(distance);
+        if (nearest == null) {
             return 50.0; // Default fallback
         }
-        return flywheelVelocityMap.get(distance);
+        return nearest.flywheelRPS;
     }
     
     /**
@@ -219,27 +336,60 @@ public class ShooterCalibration {
      */
     public void recordCurrentPoint() {
         double distance = currentDistanceEntry.getDouble(0.0);
-        double hood = manualHoodEntry.getDouble(25.0);
         double flywheel = manualFlywheelEntry.getDouble(50.0);
         
         if (distance > 0.1) { // Only record if distance is valid
-            addCalibrationPoint(distance, hood, flywheel);
-            System.out.println("[ShooterCalibration] RECORDED: Distance=" + distance + "m Hood=" + hood + "° Flywheel=" + flywheel + " RPS");
+            if (isFixedHoodMode()) {
+                // In fixed hood mode, use the fixed hood angle and save to fixed hood calibration
+                double fixedHood = getFixedHoodAngle();
+                addFixedHoodCalibrationPoint(distance, fixedHood, flywheel);
+                System.out.println("[ShooterCalibration] RECORDED FIXED HOOD: Distance=" + distance + "m Hood=" + fixedHood + "° (LOCKED) Flywheel=" + flywheel + " RPS");
+            } else {
+                // In variable hood mode, use manual hood and save to regular calibration
+                double hood = manualHoodEntry.getDouble(25.0);
+                addCalibrationPoint(distance, hood, flywheel);
+                System.out.println("[ShooterCalibration] RECORDED: Distance=" + distance + "m Hood=" + hood + "° Flywheel=" + flywheel + " RPS");
+            }
         } else {
             System.out.println("[ShooterCalibration] Cannot record - invalid distance: " + distance);
         }
     }
     
     /**
-     * Updates dashboard with current interpolated values
+     * Updates dashboard with current lookup values and nearest point info
      */
     public void updateDashboard(double currentDistance) {
-        calibrationTable.getEntry("InterpolatedHood").setDouble(getHoodAngle(currentDistance));
-        calibrationTable.getEntry("InterpolatedFlywheel").setDouble(getFlywheelVelocity(currentDistance));
-        calibrationTable.getEntry("CalibrationPointCount").setDouble(calibrationPoints.size());
+        CalibrationPoint nearest = findNearestPoint(currentDistance);
+        
+        // Update the current distance display on dashboard
+        calibrationTable.getEntry("CurrentDistance").setDouble(currentDistance);
+        
+        calibrationTable.getEntry("LookupHood").setDouble(getHoodAngle(currentDistance));
+        calibrationTable.getEntry("LookupFlywheel").setDouble(getFlywheelVelocity(currentDistance));
+        
+        // Show appropriate calibration point count based on mode
+        if (isFixedHoodMode()) {
+            calibrationTable.getEntry("CalibrationPointCount").setDouble(fixedHoodCalibrationPoints.size());
+            calibrationTable.getEntry("ActiveDataset").setString("FIXED HOOD");
+        } else {
+            calibrationTable.getEntry("CalibrationPointCount").setDouble(calibrationPoints.size());
+            calibrationTable.getEntry("ActiveDataset").setString("VARIABLE HOOD");
+        }
+        
+        if (nearest != null) {
+            calibrationTable.getEntry("NearestPointDistance").setDouble(nearest.distance);
+            calibrationTable.getEntry("DistanceError").setDouble(Math.abs(currentDistance - nearest.distance));
+        }
         
         // Show current mode
-        String mode = isCalibrationMode() ? "MANUAL CALIBRATION" : "AUTO INTERPOLATED";
+        String mode;
+        if (isFixedHoodMode()) {
+            mode = "FIXED HOOD @ " + getFixedHoodAngle() + "°";
+        } else if (isCalibrationMode()) {
+            mode = "MANUAL CALIBRATION";
+        } else {
+            mode = "AUTO LOOKUP TABLE";
+        }
         calibrationTable.getEntry("CurrentMode").setString(mode);
     }
     

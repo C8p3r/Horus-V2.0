@@ -96,6 +96,8 @@ public class Telemetry {
      * - NetworkTables "Pose/robotPose" as Field2d format
      * - CTRE SignalLogger for post-match analysis
      */
+
+     
     public void telemeterize(SwerveDriveState state) {
         /* Telemeterize the swerve drive state */
         drivePose.set(state.Pose);

@@ -40,7 +40,6 @@ import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 
 import edu.wpi.first.math.geometry.Rotation2d;
-import edu.wpi.first.math.trajectory.TrajectoryUtil;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
@@ -55,7 +54,6 @@ import frc.robot.commands.*;
 
 import frc.robot.util.FuelSim;
 import frc.robot.util.ShootingCalculator;
-import frc.robot.util.TelemetryThrottle;
 
 public class RobotContainer {
     
@@ -66,15 +64,6 @@ public class RobotContainer {
     
     /** Shooter calibration mode: true = manual sliders, false = auto interpolation */
     public static final boolean SHOOTER_CALIBRATION_MODE = true;
-    
-    /** Toggle to control whether intake retracts during shooting sequence */
-    public static final boolean RETRACT_INTAKE_WHILE_SHOOTING = false;
-    
-    /** Disable intake deployment motor for testing */
-    private static final boolean DISABLE_INTAKE_DEPLOY_MOTOR = false;
-    
-    /** Climbing mode speed reduction (25% speed when climber deployed) */
-    private static final double CLIMBING_SPEED_REDUCTION = 0.25;
     
     // ==================== DRIVETRAIN CONSTANTS ====================
     
@@ -99,15 +88,11 @@ public class RobotContainer {
         () -> drivetrain.getState().Speeds
     );
     private final FlywheelSubsystem flywheelSubsystem = new FlywheelSubsystem();
-    private final HoodSubsystem hoodSubsystem = new HoodSubsystem();
     
     // Intake System
     private final IntakeRollerSubsystem intakeRollerSubsystem = new IntakeRollerSubsystem();
-    private final IntakePositionSubsystem intakePositionSubsystem = new IntakePositionSubsystem();
-    private final IndexerSubsystem indexerSubsystem = new IndexerSubsystem();
-    
-    // Climber
-    private final ClimberSubsystem climberSubsystem = new ClimberSubsystem();
+    private final TurboKickerSubsystem turboKickerSubsystem = new TurboKickerSubsystem();
+    private final IntakeWinchSubsystem intakeWinchSubsystem = new IntakeWinchSubsystem();
     
     // LEDs
     private final CANdleSubsystem candleSubsystem = new CANdleSubsystem();
@@ -125,7 +110,6 @@ public class RobotContainer {
     // ==================== UTILITIES ====================
     
     private final Telemetry logger = new Telemetry(maxSpeed);
-    private final TelemetryThrottle robotContainerTelemetryThrottle = new TelemetryThrottle(0.2);
     private final SendableChooser<Command> autoChooser = new SendableChooser<>();
 
     // ==================== CONSTRUCTOR ====================
@@ -135,9 +119,6 @@ public class RobotContainer {
         drivetrain.setVisionSubsystem(visionSubsystem);
         
         // Apply configuration flags
-        if (DISABLE_INTAKE_DEPLOY_MOTOR) {
-            intakePositionSubsystem.disableDeployMotor();
-        }
         ShootingCalculator.getCalibration().setCalibrationMode(SHOOTER_CALIBRATION_MODE);
         
         // Configure robot
@@ -177,26 +158,24 @@ public class RobotContainer {
     }
     
     private void configureDrivetrainDefaultCommand() {
-        // Field-centric drive with speed reduction when climbing and chassis rotation assist
+        // Field-centric drive with chassis rotation assist
         drivetrain.setDefaultCommand(
             drivetrain.applyRequest(() -> {
-                double speedMultiplier = climberSubsystem.isDeployed() ? CLIMBING_SPEED_REDUCTION : 1.0;
                 double chassisRotationAssist = turretSubsystem.getChassisRotationAssist();
-                double driverRotation = -joystick.getRightX() * maxAngularRate * speedMultiplier;
+                double driverRotation = -joystick.getRightX() * maxAngularRate;
                 double totalRotation = driverRotation + chassisRotationAssist;
                 
-                return drive.withVelocityX(-joystick.getLeftY() * maxSpeed * speedMultiplier)
-                    .withVelocityY(-joystick.getLeftX() * maxSpeed * speedMultiplier)
+                return drive.withVelocityX(-joystick.getLeftY() * maxSpeed)
+                    .withVelocityY(-joystick.getLeftX() * maxSpeed)
                     .withRotationalRate(totalRotation);
             })
         );
     }
     
     private void configureIntakeDefaultCommands() {
-        // Intake roller maintains last commanded state
+        // Intake runs at low idle speed when no buttons are pressed
         intakeRollerSubsystem.setDefaultCommand(
-            Commands.run(() -> {}, intakeRollerSubsystem)
-                .withName("Intake Roller Idle")
+            IntakeCommand.idle(intakeRollerSubsystem, turboKickerSubsystem)
         );
     }
     
@@ -207,13 +186,6 @@ public class RobotContainer {
                 .withName("Turret Tracking")
         );
         
-        // Hood follows calibration values (manual sliders or auto interpolation)
-        hoodSubsystem.setDefaultCommand(
-            Commands.run(() -> {
-                updateHoodFromCalibration();
-            }, hoodSubsystem).withName("Hood Tracking")
-        );
-        
         // Flywheel follows calibration values (manual sliders or auto interpolation)
         flywheelSubsystem.setDefaultCommand(
             Commands.run(() -> {
@@ -221,34 +193,12 @@ public class RobotContainer {
             }, flywheelSubsystem).withName("Flywheel Tracking")
         );
         
-        // Indexer follows manual calibration sliders in calibration mode
-        indexerSubsystem.setDefaultCommand(
+        // TurboKicker follows manual calibration sliders in calibration mode
+        turboKickerSubsystem.setDefaultCommand(
             Commands.run(() -> {
-                updateIndexerFromCalibration();
-            }, indexerSubsystem).withName("Indexer Manual Control")
+                updateTurboKickerFromCalibration();
+            }, turboKickerSubsystem).withName("TurboKicker Manual Control")
         );
-    }
-    
-    private void updateHoodFromCalibration() {
-        var calibration = ShootingCalculator.getCalibration();
-        
-        if (calibration.isCalibrationMode()) {
-            // Manual mode: Use dashboard slider
-            double hoodAngle = calibration.getManualHoodAngle();
-            hoodSubsystem.setAngle(Rotation2d.fromDegrees(hoodAngle));
-        } else {
-            // Auto mode: Interpolate based on distance to target
-            var target = turretSubsystem.getTarget();
-            if (target != null) {
-                var robotPose = drivetrain.getState().Pose;
-                double distance = robotPose.getTranslation().getDistance(target.toTranslation2d());
-                calibration.setCurrentDistance(distance);
-                calibration.updateDashboard(distance);
-                hoodSubsystem.setAngle(Rotation2d.fromDegrees(calibration.getHoodAngle(distance)));
-            } else {
-                hoodSubsystem.setAngle(Rotation2d.fromDegrees(0)); // Pack hood
-            }
-        }
     }
     
     private void updateFlywheelFromCalibration() {
@@ -270,16 +220,15 @@ public class RobotContainer {
         }
     }
     
-    private void updateIndexerFromCalibration() {
+    private void updateTurboKickerFromCalibration() {
         var calibration = ShootingCalculator.getCalibration();
         
         if (calibration.isCalibrationMode()) {
-            // Manual mode: Use dashboard sliders
-            indexerSubsystem.setFloorIndexerDutyCycle(calibration.getManualFloorIndexer());
-            indexerSubsystem.setFireIndexerDutyCycle(calibration.getManualFireIndexer());
+            // Manual mode: TurboKicker uses preset speeds, no manual control
+            turboKickerSubsystem.stop();
         } else {
-            // Auto mode: Stop (shooting commands will control indexers)
-            indexerSubsystem.stopAll();
+            // Auto mode: Stop (shooting commands will control TurboKicker)
+            turboKickerSubsystem.stop();
         }
     }
     
@@ -290,7 +239,6 @@ public class RobotContainer {
         configureVisionControls();
         configureShooterControls();
         configureIntakeControls();
-        configureClimberControls();
         configurePathPlannerControls();
     }
     private void configureDrivetrainControls() {
@@ -332,14 +280,19 @@ public class RobotContainer {
     
     private void configureShooterControls() {
         // Target tracking and smart shooting with triggers
-        joystick.leftTrigger().onTrue(Commands.sequence(
-            Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.BLUE_HUB)),
-            createSmartShootCommand()
-        ));
-        joystick.rightTrigger().onTrue(Commands.sequence(
-            Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.RED_HUB)),
-            createSmartShootCommand()
-        ));
+        joystick.leftTrigger()
+            .onTrue(Commands.sequence(
+                Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.BLUE_HUB)),
+                createSmartShootCommand()
+            ))
+            .onFalse(Commands.runOnce(() -> turretSubsystem.setTarget(null))); // Clear target on release
+        
+        joystick.rightTrigger()
+            .onTrue(Commands.sequence(
+                Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.RED_HUB)),
+                createSmartShootCommand()
+            ))
+            .onFalse(Commands.runOnce(() -> turretSubsystem.setTarget(null))); // Clear target on release
         
         // Driver A button also does smart shoot (uses already-set target)
         joystick.a().onTrue(createSmartShootCommand());
@@ -347,9 +300,9 @@ public class RobotContainer {
         // Operator controls
         operatorController.povDown().onTrue(Commands.runOnce(() -> turretSubsystem.setTarget(null))); // Clear target
         operatorController.b().onTrue(ShootCommand.shoot( // Manual shoot
-            flywheelSubsystem, indexerSubsystem, turretSubsystem, hoodSubsystem,
-            intakeRollerSubsystem, intakePositionSubsystem,
-            60.0, Rotation2d.fromDegrees(0.0), Rotation2d.fromDegrees(25.0)
+            flywheelSubsystem, turboKickerSubsystem, turretSubsystem,
+            intakeRollerSubsystem,
+            60.0, Rotation2d.fromDegrees(0.0)
         ));
         
         // Calibration
@@ -364,27 +317,19 @@ public class RobotContainer {
             if (!solution.isValid) return Commands.none();
             
             return ShootCommand.shoot(
-                flywheelSubsystem, indexerSubsystem, turretSubsystem, hoodSubsystem,
-                intakeRollerSubsystem, intakePositionSubsystem,
-                solution.flywheelVelocityRPS, solution.getTurretAngle(), solution.getHoodAngle()
+                flywheelSubsystem, turboKickerSubsystem, turretSubsystem,
+                intakeRollerSubsystem,
+                solution.flywheelVelocityRPS, solution.getTurretAngle()
             );
-        }, java.util.Set.of(turretSubsystem, drivetrain));
+        }, java.util.Set.of(flywheelSubsystem, turboKickerSubsystem, turretSubsystem, intakeRollerSubsystem));
     }
     
     private void configureIntakeControls() {
-        joystick.rightBumper().onTrue(IntakeCommand.toggleIntake(
-            intakeRollerSubsystem, intakePositionSubsystem, indexerSubsystem));
+        // Right bumper held = full speed intake, left bumper held = reverse/eject
+        joystick.rightBumper().whileTrue(IntakeCommand.intake(
+            intakeRollerSubsystem, turboKickerSubsystem));
         joystick.leftBumper().whileTrue(IntakeCommand.eject(
-            intakeRollerSubsystem, indexerSubsystem));
-    }
-    
-    private void configureClimberControls() {
-        operatorController.y().onTrue(ClimberCommand.deployClimber(
-            climberSubsystem, intakePositionSubsystem, intakeRollerSubsystem, 
-            indexerSubsystem, flywheelSubsystem, turretSubsystem, hoodSubsystem));
-        operatorController.x().onTrue(ClimberCommand.storeClimber(
-            climberSubsystem, intakePositionSubsystem, intakeRollerSubsystem,
-            indexerSubsystem, flywheelSubsystem, turretSubsystem, hoodSubsystem));
+            intakeRollerSubsystem, turboKickerSubsystem));
     }
     
     // ==================== AUTONOMOUS ====================
@@ -417,9 +362,6 @@ public class RobotContainer {
     private static final int ORANGE_FLASH_DURATION = 10;
     
     public void periodic() {
-        if (!DISABLE_ALL_TELEMETRY && robotContainerTelemetryThrottle.shouldUpdate()) {
-            SmartDashboard.putBoolean("Climbing Mode", climberSubsystem.isDeployed());
-        }
         updateVelocityDipDetection();
         updateLEDFeedback();
         updateControllerRumble();
@@ -462,27 +404,36 @@ public class RobotContainer {
     }
     
     private void updateLEDFeedback() {
-        // Priority order: Overheating > Climbing > Note scored > Shooting > Intake > Aiming > Idle
-        if (flywheelSubsystem.isOverheating()) {
-            candleSubsystem.setRapidRedBlink();
-        } else if (climberSubsystem.isFullyDeployed() && climberSubsystem.isDeployed()) {
-            candleSubsystem.setSlowRainbow();
-        } else if (climberSubsystem.isDeployed() && !climberSubsystem.isRetracted()) {
-            candleSubsystem.setRapidRainbow();
-        } else if (orangeFlashCounter > 0) {
-            candleSubsystem.setRGB(255, 165, 0);
-        } else if (flywheelSubsystem.getTargetVelocityRPS() > 0.1) {
-            if (flywheelSubsystem.atTargetVelocity()) {
-                candleSubsystem.setRGBWithModulation(0, 255, 0, 3.0, 0.6, 1.0);
+        // Two-zone LED system:
+        // Zone 1 (CANdle 0-7): Debugging feedback
+        // Zone 2 (Lightbar 8-35): Visual feedback
+        
+        // Determine robot state priority: Shooting > Intaking > Outtaking > Idle
+        // Use button states for immediate LED response
+        boolean isIntakingButton = joystick.rightBumper().getAsBoolean();
+        boolean isOuttakingButton = joystick.leftBumper().getAsBoolean();
+        boolean isShooting = flywheelSubsystem.getTargetVelocityRPS() > 0.1;
+        boolean flywheelAtSpeed = flywheelSubsystem.atTargetVelocity();
+        
+        if (isShooting) {
+            // Shooting state
+            if (flywheelAtSpeed) {
+                // At speed: Blue fire
+                candleSubsystem.setShootingReady();
             } else {
-                candleSubsystem.setRGBWithModulation(255, 255, 0, 1.5, 0.4, 0.9);
+                // Spinning up: Normal fire with progress
+                double progress = flywheelSubsystem.getVelocityRPS() / flywheelSubsystem.getTargetVelocityRPS();
+                candleSubsystem.setShootingSpinup(progress);
             }
-        } else if (Math.abs(intakeRollerSubsystem.getVelocity()) > 1.0) {
-            candleSubsystem.setRGBWithModulation(0, 0, 255, 2.5, 0.5, 1.0);
-        } else if (turretSubsystem.atTarget() && hoodSubsystem.atTargetAngle()) {
-            candleSubsystem.setRGBWithModulation(128, 0, 255, 2.0, 0.7, 1.0);
+        } else if (isIntakingButton) {
+            // Intaking state (right bumper held)
+            candleSubsystem.setIntaking();
+        } else if (isOuttakingButton) {
+            // Outtaking state (left bumper held)
+            candleSubsystem.setOuttaking();
         } else {
-            candleSubsystem.setRGBWithModulation(80, 80, 80, 0.5, 0.1, 0.3);
+            // Idle state
+            candleSubsystem.setIdle();
         }
     }
     

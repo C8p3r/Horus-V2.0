@@ -5,11 +5,13 @@ import com.ctre.phoenix6.StatusSignal;
 import com.ctre.phoenix6.configs.MotionMagicConfigs;
 import com.ctre.phoenix6.configs.Slot0Configs;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
+import com.ctre.phoenix6.controls.Follower;
 import com.ctre.phoenix6.controls.MotionMagicVelocityVoltage;
 import com.ctre.phoenix6.controls.NeutralOut;
 import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
+import com.ctre.phoenix6.signals.MotorAlignmentValue;
 
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
@@ -17,17 +19,22 @@ import frc.robot.constants.FlywheelConstants;
 
 /**
  * Subsystem for controlling the shooter flywheel velocity
+ * Uses 3 Kraken X60 motors: 1 leader + 2 opposed followers
  */
 public class FlywheelSubsystem extends SubsystemBase {
     
     private final CANBus canBus;
-    private final TalonFX flywheelMotor;
+    private final TalonFX leaderMotor;
+    private final TalonFX follower1Motor;
+    private final TalonFX follower2Motor;
     private final MotionMagicVelocityVoltage velocityRequest;
     private final NeutralOut neutralRequest;
     
     // Cached status signals for performance
     private final StatusSignal<?> velocitySignal;
-    private final StatusSignal<?> temperatureSignal;
+    private final StatusSignal<?> leaderTemperatureSignal;
+    private final StatusSignal<?> follower1TemperatureSignal;
+    private final StatusSignal<?> follower2TemperatureSignal;
     
     // Temperature threshold for overheating (Celsius)
     private static final double OVERHEAT_TEMPERATURE_C = 80.0;
@@ -38,26 +45,37 @@ public class FlywheelSubsystem extends SubsystemBase {
         // Initialize CAN bus
         canBus = new CANBus(FlywheelConstants.CANBUS_NAME);
         
-        flywheelMotor = new TalonFX(FlywheelConstants.MOTOR_ID, canBus);
+        leaderMotor = new TalonFX(FlywheelConstants.LEADER_MOTOR_ID, canBus);
+        follower1Motor = new TalonFX(FlywheelConstants.FOLLOWER1_MOTOR_ID, canBus);
+        follower2Motor = new TalonFX(FlywheelConstants.FOLLOWER2_MOTOR_ID, canBus);
         
-        // Configure motor
-        configureFlywheel();
+        // Configure motors
+        configureLeaderMotor();
+        configureFollowerMotors();
         
         // Initialize cached status signals
-        velocitySignal = flywheelMotor.getVelocity();
+        velocitySignal = leaderMotor.getVelocity();
         velocitySignal.setUpdateFrequency(50); // 50Hz
         
-        temperatureSignal = flywheelMotor.getDeviceTemp();
-        temperatureSignal.setUpdateFrequency(4); // 4Hz (temperature changes slowly)
+        leaderTemperatureSignal = leaderMotor.getDeviceTemp();
+        leaderTemperatureSignal.setUpdateFrequency(4); // 4Hz (temperature changes slowly)
         
-        flywheelMotor.optimizeBusUtilization();
+        follower1TemperatureSignal = follower1Motor.getDeviceTemp();
+        follower1TemperatureSignal.setUpdateFrequency(4);
+        
+        follower2TemperatureSignal = follower2Motor.getDeviceTemp();
+        follower2TemperatureSignal.setUpdateFrequency(4);
+        
+        leaderMotor.optimizeBusUtilization();
+        follower1Motor.optimizeBusUtilization();
+        follower2Motor.optimizeBusUtilization();
         
         // Initialize control requests
         velocityRequest = new MotionMagicVelocityVoltage(0).withSlot(0);
         neutralRequest = new NeutralOut();
     }
     
-    private void configureFlywheel() {
+    private void configureLeaderMotor() {
         TalonFXConfiguration config = new TalonFXConfiguration();
         
         // Motor output
@@ -91,7 +109,38 @@ public class FlywheelSubsystem extends SubsystemBase {
         motionMagic.MotionMagicJerk = FlywheelConstants.MAX_JERK_RPSSS;
         config.MotionMagic = motionMagic;
         
-        flywheelMotor.getConfigurator().apply(config);
+        leaderMotor.getConfigurator().apply(config);
+    }
+    
+    private void configureFollowerMotors() {
+        // Strip followers to default configuration before setting them up
+        TalonFXConfiguration defaultConfig = new TalonFXConfiguration();
+        follower1Motor.getConfigurator().apply(defaultConfig);
+        follower2Motor.getConfigurator().apply(defaultConfig);
+        
+        // Configure follower motors with opposed direction
+        TalonFXConfiguration followerConfig = new TalonFXConfiguration();
+        
+        // Match neutral mode to leader
+        followerConfig.MotorOutput.NeutralMode = NeutralModeValue.Coast;
+        
+        // Invert for opposed direction
+        followerConfig.MotorOutput.Inverted = !FlywheelConstants.MOTOR_INVERTED 
+            ? InvertedValue.Clockwise_Positive 
+            : InvertedValue.CounterClockwise_Positive;
+        
+        // Current Limits (same as leader)
+        followerConfig.CurrentLimits.SupplyCurrentLimit = FlywheelConstants.SUPPLY_CURRENT_LIMIT;
+        followerConfig.CurrentLimits.SupplyCurrentLimitEnable = FlywheelConstants.ENABLE_CURRENT_LIMIT;
+        followerConfig.CurrentLimits.StatorCurrentLimit = FlywheelConstants.STATOR_CURRENT_LIMIT;
+        followerConfig.CurrentLimits.StatorCurrentLimitEnable = FlywheelConstants.ENABLE_CURRENT_LIMIT;
+        
+        follower1Motor.getConfigurator().apply(followerConfig);
+        follower2Motor.getConfigurator().apply(followerConfig);
+        
+    // Set followers to follow leader (alignment handled by Follower control)
+    follower1Motor.setControl(new Follower(FlywheelConstants.LEADER_MOTOR_ID, MotorAlignmentValue.Aligned));
+    follower2Motor.setControl(new Follower(FlywheelConstants.LEADER_MOTOR_ID, MotorAlignmentValue.Aligned));
     }
     
     /**
@@ -132,15 +181,20 @@ public class FlywheelSubsystem extends SubsystemBase {
      */
     public void stop() {
         targetVelocityRPS = 0;
-        flywheelMotor.setControl(neutralRequest);
+        leaderMotor.setControl(neutralRequest);
+        // Followers automatically follow leader to neutral
     }
     
     /**
      * Get current motor temperature in Celsius
-     * @return Temperature in degrees Celsius
+     * @return Maximum temperature across all three motors
      */
     public double getTemperatureCelsius() {
-        return temperatureSignal.getValueAsDouble();
+        return Math.max(
+            Math.max(leaderTemperatureSignal.getValueAsDouble(), 
+                     follower1TemperatureSignal.getValueAsDouble()),
+            follower2TemperatureSignal.getValueAsDouble()
+        );
     }
     
     /**
@@ -158,11 +212,14 @@ public class FlywheelSubsystem extends SubsystemBase {
     @Override
     public void periodic() {
         // Update motor control - targetVelocityRPS is set by default command or manual control
-        flywheelMotor.setControl(velocityRequest.withVelocity(targetVelocityRPS));
+        leaderMotor.setControl(velocityRequest.withVelocity(targetVelocityRPS));
+        // Followers automatically follow leader
         
         // Refresh cached signals
         velocitySignal.refresh();
-        temperatureSignal.refresh();
+        leaderTemperatureSignal.refresh();
+        follower1TemperatureSignal.refresh();
+        follower2TemperatureSignal.refresh();
         
         // Throttle telemetry for performance
         telemetryCounter++;
@@ -171,7 +228,7 @@ public class FlywheelSubsystem extends SubsystemBase {
             SmartDashboard.putNumber("Flywheel/Velocity RPS", getVelocityRPS());
             SmartDashboard.putNumber("Flywheel/Target RPS", targetVelocityRPS);
             SmartDashboard.putBoolean("Flywheel/At Target", atTargetVelocity());
-            SmartDashboard.putNumber("Flywheel/Temperature °C", Math.round(getTemperatureCelsius() * 10.0) / 10.0);
+            SmartDashboard.putNumber("Flywheel/Max Temperature °C", Math.round(getTemperatureCelsius() * 10.0) / 10.0);
             SmartDashboard.putBoolean("Flywheel/OVERHEATING", isOverheating());
         }
     }

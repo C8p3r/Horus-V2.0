@@ -1,9 +1,9 @@
 package frc.robot.subsystems;
 
-import com.ctre.phoenix6.CANBus;
 import com.ctre.phoenix6.StatusSignal;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.controls.DutyCycleOut;
+import com.ctre.phoenix6.controls.Follower;
 import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
@@ -13,13 +13,14 @@ import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import frc.robot.constants.IntakeRollerConstants;
 
 /**
- * Subsystem for controlling the intake roller motor.
- * Controls the roller duty cycle to intake or eject game pieces.
+ * Subsystem for controlling the intake roller motors.
+ * NOW USES DUAL KRAKEN X60 MOTORS (upper and lower, opposed configuration)
+ * Controls both rollers via duty cycle to intake or eject game pieces.
  */
 public class IntakeRollerSubsystem extends SubsystemBase {
     
-    private final CANBus canBus;
-    private final TalonFX rollerMotor;
+    private final TalonFX upperMotor;
+    private final TalonFX lowerMotor;
     
     // Cached status signal for performance (Phoenix 6 optimization)
     private final StatusSignal<?> velocitySignal;
@@ -28,35 +29,37 @@ public class IntakeRollerSubsystem extends SubsystemBase {
     private final DutyCycleOut dutyCycleRequest;
     
     public IntakeRollerSubsystem() {
-        // Initialize CAN bus
-        canBus = new CANBus(IntakeRollerConstants.CANBUS_NAME);
+        // Initialize motors
+        upperMotor = new TalonFX(IntakeRollerConstants.UPPER_MOTOR_ID, IntakeRollerConstants.CANBUS_NAME);
+        lowerMotor = new TalonFX(IntakeRollerConstants.LOWER_MOTOR_ID, IntakeRollerConstants.CANBUS_NAME);
         
-        // Initialize motor
-        rollerMotor = new TalonFX(IntakeRollerConstants.MOTOR_ID, canBus);
-        
-        // Initialize cached status signal for performance
-        velocitySignal = rollerMotor.getVelocity();
+        // Initialize cached status signal for performance (use upper motor)
+        velocitySignal = upperMotor.getVelocity();
         velocitySignal.setUpdateFrequency(50); // 50Hz for velocity
         
         // Optimize CAN bus utilization
-        rollerMotor.optimizeBusUtilization();
+        upperMotor.optimizeBusUtilization();
+        lowerMotor.optimizeBusUtilization();
         
         // Initialize control request
-        dutyCycleRequest = new DutyCycleOut(0);
+        dutyCycleRequest = new DutyCycleOut(0).withEnableFOC(true);
         
-        // Configure motor
-        configureRollerMotor();
+        // Configure motors
+        configureMotor(upperMotor, IntakeRollerConstants.UPPER_MOTOR_INVERTED);
+        configureMotor(lowerMotor, IntakeRollerConstants.LOWER_MOTOR_INVERTED);
+        
+        System.out.println("[IntakeRoller] Dual X60 subsystem initialized");
     }
     
     /**
-     * Configure the intake roller motor for duty cycle control
+     * Configure an intake roller motor for duty cycle control
      */
-    private void configureRollerMotor() {
+    private void configureMotor(TalonFX motor, boolean inverted) {
         TalonFXConfiguration config = new TalonFXConfiguration();
         
         // Motor output settings
         config.MotorOutput.NeutralMode = NeutralModeValue.Brake;
-        config.MotorOutput.Inverted = IntakeRollerConstants.MOTOR_INVERTED
+        config.MotorOutput.Inverted = inverted
             ? InvertedValue.Clockwise_Positive
             : InvertedValue.CounterClockwise_Positive;
         
@@ -66,16 +69,17 @@ public class IntakeRollerSubsystem extends SubsystemBase {
         config.CurrentLimits.StatorCurrentLimit = IntakeRollerConstants.STATOR_CURRENT_LIMIT;
         config.CurrentLimits.StatorCurrentLimitEnable = IntakeRollerConstants.ENABLE_CURRENT_LIMIT;
         
-        rollerMotor.getConfigurator().apply(config);
-        rollerMotor.setPosition(0);
+        motor.getConfigurator().apply(config);
+        motor.setPosition(0);
     }
     
     /**
-     * Run the intake roller at the specified duty cycle
+     * Run both intake rollers at the specified duty cycle
      * @param dutyCycle Roller duty cycle from -1.0 to 1.0 (positive = intake)
      */
     public void setDutyCycle(double dutyCycle) {
-        rollerMotor.setControl(dutyCycleRequest.withOutput(dutyCycle));
+        upperMotor.setControl(dutyCycleRequest.withOutput(dutyCycle));
+        lowerMotor.setControl(dutyCycleRequest.withOutput(dutyCycle));
     }
     
     /**
@@ -91,14 +95,15 @@ public class IntakeRollerSubsystem extends SubsystemBase {
     }
     
     /**
-     * Stop the intake roller
+     * Stop both intake rollers
      */
     public void stop() {
-        rollerMotor.stopMotor();
+        upperMotor.stopMotor();
+        lowerMotor.stopMotor();
     }
     
     /**
-     * Get the current roller velocity in RPS
+     * Get the current upper roller velocity in RPS
      */
     public double getVelocity() {
         return velocitySignal.getValueAsDouble();
@@ -126,7 +131,7 @@ public class IntakeRollerSubsystem extends SubsystemBase {
         telemetryCounter++;
         if (telemetryCounter >= TELEMETRY_UPDATE_PERIOD) {
             telemetryCounter = 0;
-            SmartDashboard.putNumber("IntakeRoller/Velocity RPS", getVelocity());
+            SmartDashboard.putNumber("IntakeRoller/UpperVelocity RPS", getVelocity());
         }
     }
 }

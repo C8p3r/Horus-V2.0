@@ -31,12 +31,12 @@ public final class CANdleConstants {
     
     // LED Configuration
     public static final int LED_START_INDEX = 0; // Start at first onboard LED
-    public static final int LED_END_INDEX = 99; // 8 onboard + 60 external = 68 total (0-67)
+    public static final int LED_END_INDEX = 37; // 8 onboard + 30 external = 38 total (0-37)
     
-    // LED Counts
+    // LED Counts - UPDATED for new strip
     public static final int NUM_ONBOARD_LEDS = 8;
-    public static final int NUM_EXTERNAL_LEDS = 60;
-    public static final int TOTAL_LED_COUNT = NUM_ONBOARD_LEDS + NUM_EXTERNAL_LEDS;
+    public static final int NUM_EXTERNAL_LEDS = 30; // Updated from 60
+    public static final int TOTAL_LED_COUNT = NUM_ONBOARD_LEDS + NUM_EXTERNAL_LEDS; // 38 total
     
     // Brightness Settings (0.0 to 1.0)
     public static final double DEFAULT_BRIGHTNESS = 0.5;
