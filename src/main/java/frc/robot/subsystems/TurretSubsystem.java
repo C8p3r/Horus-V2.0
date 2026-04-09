@@ -132,6 +132,8 @@ public class TurretSubsystem extends SubsystemBase {
         // Calculate error: how much we need to rotate
         double currentHeading = robotPose.getRotation().getRadians();
         double targetHeading = angleToTarget.getRadians();
+        // Flip heading by 180 degrees to aim opposite direction (away from target for shooting)
+        targetHeading += Math.PI;
         double error = targetHeading - currentHeading;
         
         // Normalize error to [-π, π]

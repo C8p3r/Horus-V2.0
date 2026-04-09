@@ -1,14 +1,18 @@
-# TODO: Implement Vision Pose Instead of Wheel Pose
+# Vision System Integration - MegaTag1 (MT1)
+Status: ✅ Complete
 
-## Plan:
-1. [x] Modify VisionSubsystem.java - Add method to get most trusted vision measurement with quality metrics
-2. [x] Modify CommandSwerveDrivetrain.java - Add getPose() that returns vision pose when available
-3. [x] Modify RobotContainer.java - Connect VisionSubsystem to CommandSwerveDrivetrain
+## Completed
+- [x] Integrated Limelight MegaTag1 (MT1) vision system
+- [x] Corrected MT1 NetworkTables key mapping in LimelightHelpers
+- [x] Updated VisionSubsystem to use MT1 exclusively
+- [x] Removed problematic 180° rotation transformations
+- [x] Deployed and tested vision pose estimation
+- [x] Removed QuestNav subsystem
 
-## Changes:
-- VisionSubsystem: Add VisionMeasurement record with getTrustScore() method
-- VisionSubsystem: Add getMostTrustedVisionMeasurement() method
-- VisionSubsystem: Add hasValidVisionMeasurement() method
-- CommandSwerveDrivetrain: Add setVisionSubsystem() method to connect vision
-- CommandSwerveDrivetrain: Add getPose() method that returns vision pose when available
-- RobotContainer: Call drivetrain.setVisionSubsystem(visionSubsystem) in constructor
+## Architecture
+- **Primary Vision**: MegaTag1 (MT1) via Limelight
+- **Cameras**: Front and back Limelights with redundancy
+- **Pose Delivery**: VisionSubsystem.getMostTrustedVisionMeasurement()
+- **Filter**: Requires tag count > 1 for valid measurements
+
+**Next Step:** Create QuestNavSubsystem.java

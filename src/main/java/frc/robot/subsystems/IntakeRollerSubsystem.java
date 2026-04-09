@@ -2,10 +2,11 @@ package frc.robot.subsystems;
 
 import com.ctre.phoenix6.StatusSignal;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
-import com.ctre.phoenix6.controls.DutyCycleOut;
+import com.ctre.phoenix6.controls.VelocityVoltage;
 import com.ctre.phoenix6.controls.Follower;
 import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.InvertedValue;
+import com.ctre.phoenix6.signals.MotorAlignmentValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
 
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -26,7 +27,7 @@ public class IntakeRollerSubsystem extends SubsystemBase {
     private final StatusSignal<?> velocitySignal;
     
     // Control request
-    private final DutyCycleOut dutyCycleRequest;
+    private final VelocityVoltage velocityRequest;
     
     public IntakeRollerSubsystem() {
         // Initialize motors
@@ -41,18 +42,20 @@ public class IntakeRollerSubsystem extends SubsystemBase {
         upperMotor.optimizeBusUtilization();
         lowerMotor.optimizeBusUtilization();
         
-        // Initialize control request
-        dutyCycleRequest = new DutyCycleOut(0).withEnableFOC(true);
+        // Initialize control request for velocity voltage control
+        velocityRequest = new VelocityVoltage(0).withSlot(0);
         
-        // Configure motors
+        // Configure upper motor for velocity voltage control with PID
         configureMotor(upperMotor, IntakeRollerConstants.UPPER_MOTOR_INVERTED);
-        configureMotor(lowerMotor, IntakeRollerConstants.LOWER_MOTOR_INVERTED);
         
-        System.out.println("[IntakeRoller] Dual X60 subsystem initialized");
+        // Configure lower motor as opposed follower of upper motor
+        configureLowerAsFollower();
+        
+        System.out.println("[IntakeRoller] Dual X60 subsystem initialized with velocity voltage control and lower as opposed follower");
     }
     
     /**
-     * Configure an intake roller motor for duty cycle control
+     * Configure an intake roller motor for velocity voltage control with PID
      */
     private void configureMotor(TalonFX motor, boolean inverted) {
         TalonFXConfiguration config = new TalonFXConfiguration();
@@ -63,32 +66,102 @@ public class IntakeRollerSubsystem extends SubsystemBase {
             ? InvertedValue.Clockwise_Positive
             : InvertedValue.CounterClockwise_Positive;
         
+        // Velocity PID Configuration (for velocity voltage control)
+        config.Slot0.kP = IntakeRollerConstants.kP;
+        config.Slot0.kI = IntakeRollerConstants.kI;
+        config.Slot0.kD = IntakeRollerConstants.kD;
+        config.Slot0.kS = IntakeRollerConstants.kS;
+        config.Slot0.kV = IntakeRollerConstants.kV;
+        config.Slot0.kA = IntakeRollerConstants.kA;
+        
         // Current Limits (prevent brownouts)
         config.CurrentLimits.SupplyCurrentLimit = IntakeRollerConstants.SUPPLY_CURRENT_LIMIT;
         config.CurrentLimits.SupplyCurrentLimitEnable = IntakeRollerConstants.ENABLE_CURRENT_LIMIT;
         config.CurrentLimits.StatorCurrentLimit = IntakeRollerConstants.STATOR_CURRENT_LIMIT;
         config.CurrentLimits.StatorCurrentLimitEnable = IntakeRollerConstants.ENABLE_CURRENT_LIMIT;
         
+        // NO software limits
+        config.SoftwareLimitSwitch.ForwardSoftLimitEnable = false;
+        config.SoftwareLimitSwitch.ReverseSoftLimitEnable = false;
+        
         motor.getConfigurator().apply(config);
         motor.setPosition(0);
     }
     
     /**
-     * Run both intake rollers at the specified duty cycle
-     * @param dutyCycle Roller duty cycle from -1.0 to 1.0 (positive = intake)
+     * Configure lower motor as an opposed follower of the upper motor (NO PID)
      */
-    public void setDutyCycle(double dutyCycle) {
-        upperMotor.setControl(dutyCycleRequest.withOutput(dutyCycle));
-        lowerMotor.setControl(dutyCycleRequest.withOutput(dutyCycle));
+    private void configureLowerAsFollower() {
+        // Clear any existing configuration first
+        TalonFXConfiguration config = new TalonFXConfiguration();
+        // Factory default will clear all settings
+        lowerMotor.getConfigurator().apply(config);
+        
+        // Now apply only the necessary settings for a follower
+        TalonFXConfiguration followerConfig = new TalonFXConfiguration();
+        
+        // Motor output settings
+        followerConfig.MotorOutput.NeutralMode = NeutralModeValue.Brake;
+        followerConfig.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive; // Will be inverted by follower mode
+        
+        // Current Limits (prevent brownouts)
+        followerConfig.CurrentLimits.SupplyCurrentLimit = IntakeRollerConstants.SUPPLY_CURRENT_LIMIT;
+        followerConfig.CurrentLimits.SupplyCurrentLimitEnable = IntakeRollerConstants.ENABLE_CURRENT_LIMIT;
+        followerConfig.CurrentLimits.StatorCurrentLimit = IntakeRollerConstants.STATOR_CURRENT_LIMIT;
+        followerConfig.CurrentLimits.StatorCurrentLimitEnable = IntakeRollerConstants.ENABLE_CURRENT_LIMIT;
+        
+        // NO software limits - clear them explicitly
+        followerConfig.SoftwareLimitSwitch.ForwardSoftLimitEnable = false;
+        followerConfig.SoftwareLimitSwitch.ReverseSoftLimitEnable = false;
+        
+        // NO PID - Simple duty cycle only (follower uses parent's control)
+        followerConfig.Slot0.kP = 0.0;
+        followerConfig.Slot0.kI = 0.0;
+        followerConfig.Slot0.kD = 0.0;
+        followerConfig.Slot0.kS = 0.0;
+        followerConfig.Slot0.kV = 0.0;
+        followerConfig.Slot0.kA = 0.0;
+        
+        lowerMotor.getConfigurator().apply(followerConfig);
+        
+        // Configure as opposed follower of upper motor
+        lowerMotor.setControl(new Follower(IntakeRollerConstants.UPPER_MOTOR_ID, MotorAlignmentValue.Aligned));
+        
+        System.out.println("[IntakeRoller] Lower motor configured as opposed follower (CAN ID " + IntakeRollerConstants.LOWER_MOTOR_ID + ") of upper motor (CAN ID " + IntakeRollerConstants.UPPER_MOTOR_ID + ")");
     }
     
     /**
-     * Legacy method for velocity control - converts RPS to duty cycle
+     * Run both intake rollers at the specified velocity using velocity voltage control
+     * Lower motor automatically follows upper with opposite direction
+     * @param velocityRPS Target roller velocity in rotations per second (positive = intake)
+     */
+    public void setVelocity(double velocityRPS) {
+        upperMotor.setControl(velocityRequest.withVelocity(velocityRPS));
+        // Lower motor follows automatically as opposed follower
+    }
+    
+    /**
+     * Run intake rollers at the specified duty cycle (direct velocity mapping)
+     * @param dutyCycle Roller duty cycle from -1.0 to 1.0 (maps to velocity RPS)
+     */
+    public void setDutyCycle(double dutyCycle) {
+        // Map duty cycle to velocity RPS
+        // Positive duty cycle = intake (use INTAKE_VELOCITY_RPS)
+        // Negative duty cycle = eject (use EJECT_VELOCITY_RPS)
+        double targetVelocityRPS = dutyCycle >= 0 
+            ? dutyCycle * IntakeRollerConstants.INTAKE_VELOCITY_RPS
+            : dutyCycle * Math.abs(IntakeRollerConstants.EJECT_VELOCITY_RPS);
+        
+        setVelocity(targetVelocityRPS);
+    }
+    
+    /**
+     * Legacy method for velocity control
      * @param velocityRPS Roller velocity in rotations per second (positive = intake)
-     * @deprecated Use setDutyCycle instead
+     * @deprecated Use setVelocity instead
      */
     @Deprecated
-    public void setVelocity(double velocityRPS) {
+    public void setVelocityLegacy(double velocityRPS) {
         // Convert RPS to approximate duty cycle (assuming max ~40 RPS at full power)
         double dutyCycle = velocityRPS / 40.0;
         setDutyCycle(dutyCycle);
@@ -99,7 +172,7 @@ public class IntakeRollerSubsystem extends SubsystemBase {
      */
     public void stop() {
         upperMotor.stopMotor();
-        lowerMotor.stopMotor();
+        // Lower motor is follower, stops automatically
     }
     
     /**

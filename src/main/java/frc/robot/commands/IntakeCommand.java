@@ -18,7 +18,8 @@ public class IntakeCommand {
     /**
      * Create an intake command that runs while held (full speed forward)
      * 
-     * Runs motors at full speed. TurboKicker runs in hold mode to prevent jamming.
+     * Runs ONLY intake rollers at full speed. Belt floor, feed motors, and kicker motor are off.
+     * All turbokicker components remain off unless actively shooting.
      * 
      * @param intakeRollerSubsystem The intake roller subsystem
      * @param turboKickerSubsystem The TurboKicker subsystem
@@ -29,14 +30,21 @@ public class IntakeCommand {
             TurboKickerSubsystem turboKickerSubsystem) {
         
         return Commands.run(() -> {
+            // Run ONLY intake rollers at full speed
             intakeRollerSubsystem.setDutyCycle(IntakeRollerConstants.INTAKE_DUTY_CYCLE);
-            turboKickerSubsystem.hold(); // Hold mode prevents jamming
+            // Belt floor OFF during intake
+            turboKickerSubsystem.setBeltFloorDutyCycle(0.0);
+            // Kicker motors OFF during intake
+            turboKickerSubsystem.setFeedMotorsDutyCycle(0.0);  // Feed motors off
+            turboKickerSubsystem.setKickerMotorDutyCycle(0.0); // Kicker off
         }, intakeRollerSubsystem, turboKickerSubsystem)
         .withName("Intake Full Speed");
     }
     
     /**
-     * Eject game piece (reverse intake and TurboKicker)
+     * Eject game piece (reverse intake rollers only)
+     * 
+     * Belt floor, feed motors, and kicker motor remain off.
      * 
      * @param intakeRollerSubsystem The intake roller subsystem
      * @param turboKickerSubsystem The TurboKicker subsystem
@@ -47,14 +55,20 @@ public class IntakeCommand {
             TurboKickerSubsystem turboKickerSubsystem) {
         
         return Commands.run(() -> {
+            // Reverse ONLY intake rollers
             intakeRollerSubsystem.setDutyCycle(IntakeRollerConstants.EJECT_DUTY_CYCLE);
-            turboKickerSubsystem.reverse(); // Reverse TurboKicker for ejection
+            // Belt floor BACKWARD to help unjam
+            turboKickerSubsystem.setBeltFloorDutyCycle(-0.5);
+            // Kicker motors OFF during eject
+            turboKickerSubsystem.setFeedMotorsDutyCycle(0.0);  // Feed motors off
+            turboKickerSubsystem.setKickerMotorDutyCycle(0.0); // Kicker off
         }, intakeRollerSubsystem, turboKickerSubsystem)
         .withName("Intake Eject");
     }
     
     /**
      * Idle intake at low speed (continuous background operation)
+     * Only runs belt floor at 25%, kicker motors are stopped
      * 
      * @param intakeRollerSubsystem The intake roller subsystem
      * @param turboKickerSubsystem The TurboKicker subsystem
@@ -65,9 +79,12 @@ public class IntakeCommand {
             TurboKickerSubsystem turboKickerSubsystem) {
         
         return Commands.run(() -> {
-            // Very low speed idle - 5% of intake speed (reduced from 20%)
-            intakeRollerSubsystem.setDutyCycle(IntakeRollerConstants.INTAKE_DUTY_CYCLE * 0.05);
-            turboKickerSubsystem.hold(); // Light hold to keep note in place
+            // All TurboKicker motors off in idle - only run when shoot trigger pressed
+            turboKickerSubsystem.setBeltFloorDutyCycle(0.0);
+            turboKickerSubsystem.setFeedMotorsDutyCycle(0.0);
+            turboKickerSubsystem.setKickerMotorDutyCycle(0.0);
+            // Intake rollers at 25%
+            intakeRollerSubsystem.setDutyCycle(0.25);
         }, intakeRollerSubsystem, turboKickerSubsystem)
         .withName("Intake Idle");
     }

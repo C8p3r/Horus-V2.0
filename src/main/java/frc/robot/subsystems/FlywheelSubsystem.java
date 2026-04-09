@@ -139,8 +139,8 @@ public class FlywheelSubsystem extends SubsystemBase {
         follower2Motor.getConfigurator().apply(followerConfig);
         
     // Set followers to follow leader (alignment handled by Follower control)
-    follower1Motor.setControl(new Follower(FlywheelConstants.LEADER_MOTOR_ID, MotorAlignmentValue.Aligned));
-    follower2Motor.setControl(new Follower(FlywheelConstants.LEADER_MOTOR_ID, MotorAlignmentValue.Aligned));
+    follower1Motor.setControl(new Follower(FlywheelConstants.LEADER_MOTOR_ID, MotorAlignmentValue.Opposed));
+    follower2Motor.setControl(new Follower(FlywheelConstants.LEADER_MOTOR_ID, MotorAlignmentValue.Opposed));
     }
     
     /**

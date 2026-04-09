@@ -13,10 +13,16 @@ public final class TurboKickerConstants {
     public static final int LEFT_FEED_MOTOR_ID = 15;    // Left X44 vertical feeder
     public static final int RIGHT_FEED_MOTOR_ID = 16;   // Right X44 vertical feeder
     public static final int KICKER_MOTOR_ID = 18;       // Center kicker (original motor)
-    
+    public static final int BELT_FLOOR_MOTOR_ID = 20;   // Belt floor motor
+    // Belt Floor Motor
+    public static final boolean BELT_FLOOR_INVERTED = false;
+    public static final double BELT_FLOOR_DUTY_CYCLE = 0.0; // Default idle speed (disabled/passive off)
+    public static final double BELT_FLOOR_FEED_DUTY_CYCLE = 1; // 80% forward during shooting
+    public static final double BELT_FLOOR_REVERSE_DUTY_CYCLE = -0.5; // Reverse
+
     // Motor Configuration
-    public static final boolean LEFT_FEED_INVERTED = false;
-    public static final boolean RIGHT_FEED_INVERTED = true;   // Opposed to left
+    public static final boolean LEFT_FEED_INVERTED = true;
+    public static final boolean RIGHT_FEED_INVERTED = false;   // Opposed to left
     public static final boolean KICKER_INVERTED = true;       // Same as old fire indexer
     
     // Duty Cycle Control
@@ -28,7 +34,7 @@ public final class TurboKickerConstants {
     // Kicker motor (center motor that kicks into shooter)
     public static final double KICKER_FEED_DUTY_CYCLE = 1.0;      // Full power when shooting
     public static final double KICKER_REVERSE_DUTY_CYCLE = -0.33; // Reverse to clear jams
-    public static final double KICKER_HOLD_DUTY_CYCLE = -0.25;    // Light reverse during spinup
+    public static final double KICKER_HOLD_DUTY_CYCLE = -0.20;    // Light reverse during spinup (20% reverse)
     
     public static final double OFF_DUTY_CYCLE = 0.0;       // Motors off
     

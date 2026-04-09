@@ -1,10 +1,9 @@
 package frc.robot.subsystems;
 
 import com.ctre.phoenix6.StatusCode;
-import com.ctre.phoenix6.configs.MotionMagicConfigs;
 import com.ctre.phoenix6.configs.Slot0Configs;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
-import com.ctre.phoenix6.controls.MotionMagicVoltage;
+import com.ctre.phoenix6.controls.PositionVoltage;
 import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
@@ -20,7 +19,7 @@ import frc.robot.constants.IntakeWinchConstants;
 public class IntakeWinchSubsystem extends SubsystemBase {
     
     private final TalonFX winchMotor;
-    private final MotionMagicVoltage positionRequest = new MotionMagicVoltage(0).withSlot(0);
+    private final PositionVoltage positionRequest = new PositionVoltage(0).withSlot(0);
     
     private double targetPosition = IntakeWinchConstants.EXTENDED_POSITION_ROTATIONS;
     
@@ -47,23 +46,15 @@ public class IntakeWinchSubsystem extends SubsystemBase {
         pidConfigs.kV = IntakeWinchConstants.kV;
         pidConfigs.kA = IntakeWinchConstants.kA;
         
-        // Motion Magic Configuration
-        MotionMagicConfigs mmConfigs = config.MotionMagic;
-        mmConfigs.MotionMagicCruiseVelocity = IntakeWinchConstants.MAX_VELOCITY_RPS;
-        mmConfigs.MotionMagicAcceleration = IntakeWinchConstants.MAX_ACCELERATION_RPSS;
-        mmConfigs.MotionMagicJerk = IntakeWinchConstants.MAX_JERK_RPSSS;
-        
         // Motor Output Configuration
-        config.MotorOutput.NeutralMode = NeutralModeValue.Brake;
+        config.MotorOutput.NeutralMode = NeutralModeValue.Coast;
         config.MotorOutput.Inverted = IntakeWinchConstants.MOTOR_INVERTED
             ? InvertedValue.Clockwise_Positive
             : InvertedValue.CounterClockwise_Positive;
         
-        // Soft Limits
-        config.SoftwareLimitSwitch.ForwardSoftLimitEnable = true;
-        config.SoftwareLimitSwitch.ForwardSoftLimitThreshold = IntakeWinchConstants.MAX_SOFT_LIMIT;
-        config.SoftwareLimitSwitch.ReverseSoftLimitEnable = true;
-        config.SoftwareLimitSwitch.ReverseSoftLimitThreshold = IntakeWinchConstants.MIN_SOFT_LIMIT;
+        // Soft Limits - DISABLED
+        config.SoftwareLimitSwitch.ForwardSoftLimitEnable = false;
+        config.SoftwareLimitSwitch.ReverseSoftLimitEnable = false;
         
         // Current Limits
         config.CurrentLimits.SupplyCurrentLimit = IntakeWinchConstants.SUPPLY_CURRENT_LIMIT;

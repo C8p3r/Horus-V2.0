@@ -16,28 +16,38 @@ import frc.robot.constants.TurboKickerConstants;
  * - Center kicker motor kicks notes into shooter at high speed
  */
 public class TurboKickerSubsystem extends SubsystemBase {
-    
     private final TalonFX leftFeedMotor;
     private final TalonFX rightFeedMotor;
     private final TalonFX kickerMotor;
-    
+    private final TalonFX beltFloorMotor;
+
     private final DutyCycleOut dutyCycleRequest = new DutyCycleOut(0.0).withEnableFOC(true);
-    
+
     private double currentFeedDutyCycle = 0.0;
     private double currentKickerDutyCycle = 0.0;
-    
+    private double currentBeltFloorDutyCycle = 0.0;
+
     public TurboKickerSubsystem() {
         // Initialize motors
         leftFeedMotor = new TalonFX(TurboKickerConstants.LEFT_FEED_MOTOR_ID, TurboKickerConstants.CANBUS_NAME);
         rightFeedMotor = new TalonFX(TurboKickerConstants.RIGHT_FEED_MOTOR_ID, TurboKickerConstants.CANBUS_NAME);
         kickerMotor = new TalonFX(TurboKickerConstants.KICKER_MOTOR_ID, TurboKickerConstants.CANBUS_NAME);
-        
+        beltFloorMotor = new TalonFX(TurboKickerConstants.BELT_FLOOR_MOTOR_ID, TurboKickerConstants.CANBUS_NAME);
+
         // Configure motors
         configureMotor(leftFeedMotor, TurboKickerConstants.LEFT_FEED_INVERTED);
         configureMotor(rightFeedMotor, TurboKickerConstants.RIGHT_FEED_INVERTED);
         configureMotor(kickerMotor, TurboKickerConstants.KICKER_INVERTED);
-        
-        System.out.println("[TurboKicker] Subsystem initialized with 3 motors");
+        configureMotor(beltFloorMotor, TurboKickerConstants.BELT_FLOOR_INVERTED);
+
+        System.out.println("[TurboKicker] Subsystem initialized with 4 motors (including belt floor)");
+    }
+    /**
+     * Set duty cycle for belt floor motor
+     */
+    public void setBeltFloorDutyCycle(double dutyCycle) {
+        currentBeltFloorDutyCycle = dutyCycle;
+        beltFloorMotor.setControl(dutyCycleRequest.withOutput(dutyCycle));
     }
     
     /**
@@ -60,6 +70,10 @@ public class TurboKickerSubsystem extends SubsystemBase {
             com.ctre.phoenix6.signals.InvertedValue.CounterClockwise_Positive;
         config.MotorOutput.NeutralMode = NeutralModeValue.Coast;
         
+        // NO software limits - explicitly disable them
+        config.SoftwareLimitSwitch.ForwardSoftLimitEnable = false;
+        config.SoftwareLimitSwitch.ReverseSoftLimitEnable = false;
+        
         // Apply configuration with retries
         StatusCode status = StatusCode.StatusCodeNotInitialized;
         for (int i = 0; i < 5; i++) {
@@ -73,38 +87,56 @@ public class TurboKickerSubsystem extends SubsystemBase {
     }
     
     /**
-     * Set duty cycle for feed motors (left/right X44s)
+     * Set duty cycle for feed motors (left/right X44s) - both at same speed
      */
-    private void setFeedMotorsDutyCycle(double dutyCycle) {
+    public void setFeedMotorsDutyCycle(double dutyCycle) {
         currentFeedDutyCycle = dutyCycle;
         leftFeedMotor.setControl(dutyCycleRequest.withOutput(dutyCycle));
         rightFeedMotor.setControl(dutyCycleRequest.withOutput(dutyCycle));
     }
     
     /**
+     * Set individual duty cycles for left and right feed motors
+     * @param leftDutyCycle Left feed motor duty cycle
+     * @param rightDutyCycle Right feed motor duty cycle
+     */
+    public void setFeedMotorsDutyCycleSeparate(double leftDutyCycle, double rightDutyCycle) {
+        currentFeedDutyCycle = (leftDutyCycle + rightDutyCycle) / 2.0; // Average for telemetry
+        leftFeedMotor.setControl(dutyCycleRequest.withOutput(leftDutyCycle));
+        rightFeedMotor.setControl(dutyCycleRequest.withOutput(rightDutyCycle));
+    }
+    
+    /**
      * Set duty cycle for kicker motor (center motor)
      */
-    private void setKickerMotorDutyCycle(double dutyCycle) {
+    public void setKickerMotorDutyCycle(double dutyCycle) {
         currentKickerDutyCycle = dutyCycle;
         kickerMotor.setControl(dutyCycleRequest.withOutput(dutyCycle));
     }
     
     /**
-     * Feed note at full power - runs all 3 motors
-     * Feed motors bring note up, kicker kicks it into shooter
+     * Feed note at full power - runs all 4 motors including belt floor
+     * Feed motors bring note up (both at 100%), kicker kicks it into shooter, belt floor feeds
      */
     public void feed() {
-        setFeedMotorsDutyCycle(TurboKickerConstants.FEED_MOTORS_DUTY_CYCLE);
+        // Both feed motors at full speed
+        setFeedMotorsDutyCycleSeparate(
+            TurboKickerConstants.FEED_MOTORS_DUTY_CYCLE,  // Left at 100%
+            TurboKickerConstants.FEED_MOTORS_DUTY_CYCLE   // Right at 100%
+        );
         setKickerMotorDutyCycle(TurboKickerConstants.KICKER_FEED_DUTY_CYCLE);
+        setBeltFloorDutyCycle(TurboKickerConstants.BELT_FLOOR_FEED_DUTY_CYCLE);
     }
     
     /**
-     * Hold note with light reverse pressure on both systems
+     * Hold note with light reverse pressure on both systems, belt floor keeps running
      * Used during flywheel spinup to keep note from entering shooter prematurely
+     * Both lateral motors run at the same speed
      */
     public void hold() {
         setFeedMotorsDutyCycle(TurboKickerConstants.FEED_MOTORS_HOLD_DUTY_CYCLE);
         setKickerMotorDutyCycle(TurboKickerConstants.KICKER_HOLD_DUTY_CYCLE);
+        setBeltFloorDutyCycle(TurboKickerConstants.BELT_FLOOR_FEED_DUTY_CYCLE);
     }
     
     /**
@@ -113,6 +145,7 @@ public class TurboKickerSubsystem extends SubsystemBase {
     public void reverse() {
         setFeedMotorsDutyCycle(TurboKickerConstants.FEED_MOTORS_REVERSE_DUTY_CYCLE);
         setKickerMotorDutyCycle(TurboKickerConstants.KICKER_REVERSE_DUTY_CYCLE);
+        setBeltFloorDutyCycle(TurboKickerConstants.BELT_FLOOR_REVERSE_DUTY_CYCLE);
     }
     
     /**
@@ -121,6 +154,7 @@ public class TurboKickerSubsystem extends SubsystemBase {
     public void stop() {
         setFeedMotorsDutyCycle(TurboKickerConstants.OFF_DUTY_CYCLE);
         setKickerMotorDutyCycle(TurboKickerConstants.OFF_DUTY_CYCLE);
+        setBeltFloorDutyCycle(TurboKickerConstants.OFF_DUTY_CYCLE);
     }
     
     /**

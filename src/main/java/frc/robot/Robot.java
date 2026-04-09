@@ -15,6 +15,7 @@ import org.littletonrobotics.junction.networktables.NT4Publisher;
 import org.littletonrobotics.junction.wpilog.WPILOGWriter;
 import frc.robot.util.FuelSim;
 import frc.robot.util.ShootingCalculator;
+import frc.robot.util.MatchTimer;
 
 public class Robot extends LoggedRobot {
     private Command m_autonomousCommand;
@@ -61,11 +62,14 @@ public class Robot extends LoggedRobot {
         m_timeAndJoystickReplay.update();
         CommandScheduler.getInstance().run();
         
+        // Update match timer for driver station
+        MatchTimer.updateDashboard();
+        
         // Update controller telemetry
         m_robotContainer.periodic();
         
         // Publish current robot pose for debugging
-        Pose2d currentPose = m_robotContainer.getDrivetrain().getState().Pose;
+        Pose2d currentPose = m_robotContainer.getDrivetrain().getPose();
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber("Robot/CurrentX", currentPose.getX());
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber("Robot/CurrentY", currentPose.getY());
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber("Robot/CurrentHeading", currentPose.getRotation().getDegrees());
@@ -103,10 +107,41 @@ public class Robot extends LoggedRobot {
     @Override
     public void autonomousInit() {
         // Pose already initialized from vision during disabled
+        System.out.println("[Robot] autonomousInit() called");
+        
+        // Remove drivetrain default command so PathPlanner has full control
+        Command driveDefaultCmd = m_robotContainer.drivetrain.getDefaultCommand();
+        if (driveDefaultCmd != null) {
+            System.out.println("[Robot] Removing drivetrain default command");
+            CommandScheduler.getInstance().cancel(driveDefaultCmd);
+            m_robotContainer.drivetrain.removeDefaultCommand();
+            System.out.println("[Robot] Removed drivetrain default command");
+        }
+        
+        // Remove intake default command so named commands have full control
+        Command intakeDefaultCmd = m_robotContainer.intakeRollerSubsystem.getDefaultCommand();
+        if (intakeDefaultCmd != null) {
+            System.out.println("[Robot] Removing intake default command");
+            CommandScheduler.getInstance().cancel(intakeDefaultCmd);
+            m_robotContainer.intakeRollerSubsystem.removeDefaultCommand();
+            System.out.println("[Robot] Removed intake default command");
+        }
+        
+        // Remove TurboKicker default command so shooting commands have full control
+        Command turboKickerDefaultCmd = m_robotContainer.turboKickerSubsystem.getDefaultCommand();
+        if (turboKickerDefaultCmd != null) {
+            System.out.println("[Robot] Removing TurboKicker default command");
+            CommandScheduler.getInstance().cancel(turboKickerDefaultCmd);
+            m_robotContainer.turboKickerSubsystem.removeDefaultCommand();
+            System.out.println("[Robot] Removed TurboKicker default command");
+        }
+        
         m_autonomousCommand = m_robotContainer.getAutonomousCommand();
+        System.out.println("[Robot] Got autonomous command: " + (m_autonomousCommand != null ? m_autonomousCommand.getName() : "null"));
 
         if (m_autonomousCommand != null) {
             CommandScheduler.getInstance().schedule(m_autonomousCommand);
+            System.out.println("[Robot] Scheduled autonomous command");
         }
     }
 
@@ -114,13 +149,46 @@ public class Robot extends LoggedRobot {
     public void autonomousPeriodic() {}
 
     @Override
-    public void autonomousExit() {}
+    public void autonomousExit() {
+        System.out.println("[Robot] autonomousExit() - autonomous has ended");
+        
+        // Cancel the autonomous command if it's still running
+        if (m_autonomousCommand != null) {
+            CommandScheduler.getInstance().cancel(m_autonomousCommand);
+            m_autonomousCommand = null;
+            System.out.println("[Robot] Cancelled autonomous command");
+        }
+        
+        System.out.println("[Robot] Ready for teleop");
+    }
 
     @Override
     public void teleopInit() {
+        System.out.println("[Robot] teleopInit() - transitioning from autonomous to teleop");
+        
+        // Immediately cancel autonomous command
         if (m_autonomousCommand != null) {
+            System.out.println("[Robot] Cancelling autonomous command");
             CommandScheduler.getInstance().cancel(m_autonomousCommand);
+            m_autonomousCommand = null;
         }
+        
+        // Clear any subsystem that might have lingering commands
+        System.out.println("[Robot] Clearing subsystem commands");
+        CommandScheduler.getInstance().cancel(m_robotContainer.drivetrain.getCurrentCommand());
+        CommandScheduler.getInstance().cancel(m_robotContainer.intakeRollerSubsystem.getCurrentCommand());
+        
+        // Small delay to ensure clearing completes
+        try {
+            Thread.sleep(10);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        
+        // Restore all default commands
+        System.out.println("[Robot] Restoring default commands");
+        m_robotContainer.configureDefaultCommands();
+        System.out.println("[Robot] Default commands restored successfully");
         
         // Reset shooter calibration values to initial state (hood=14°, flywheel=0 RPS)
         ShootingCalculator.getCalibration().resetToInitialValues();

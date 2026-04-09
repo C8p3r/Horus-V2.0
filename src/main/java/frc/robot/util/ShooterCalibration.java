@@ -84,43 +84,7 @@ public class ShooterCalibration {
      */
     
     private void loadDefaultCalibration() {
-        // // These are reasonable starting points - tune them empirically!
-        // // Hood angle: 14° = flattest (close shots), 40° = steepest (far shots)
-        // addCalibrationPoint(1.26, 14.00, 39.84); // Point 1 (Measured MIN)
-        // addCalibrationPoint(1.50, 15.91, 40.30);
-        // addCalibrationPoint(1.75, 17.90, 40.78);
-        // addCalibrationPoint(2.00, 19.89, 41.26);
-        // addCalibrationPoint(2.25, 21.87, 41.74);
-        // addCalibrationPoint(2.50, 23.86, 42.22);
-        // addCalibrationPoint(2.75, 27.85, 42.70);
-        // addCalibrationPoint(3.00, 29.83, 43.18);
-        // addCalibrationPoint(3.25, 31.82, 43.66);
-        // addCalibrationPoint(3.42, 31.18, 43.99); // Point 2 (Measured)
-        // addCalibrationPoint(3.50, 31.82, 44.14);
-        // addCalibrationPoint(3.75, 33.80, 44.62);
-        // addCalibrationPoint(4.00, 35.79, 45.10);
-        // addCalibrationPoint(4.25, 37.78, 45.58);
-        // addCalibrationPoint(4.50, 39.77, 46.06);
-
-                // Format: addCalibrationPoint(Distance_m, Hood_Angle, Flywheel_RPM);
-        addCalibrationPoint(1.26, 7.80, 42.50);  // Near Min: Lower angle, higher speed
-        addCalibrationPoint(1.50, 8.52, 43.15);
-        addCalibrationPoint(1.75, 9.27, 43.83);
-        addCalibrationPoint(2.00, 10.02, 44.51);
-        addCalibrationPoint(2.25, 10.77, 45.19);
-        addCalibrationPoint(2.50, 11.52, 45.87);
-        addCalibrationPoint(2.75, 12.27, 46.55);
-        addCalibrationPoint(3.00, 13.02, 47.23);
-        addCalibrationPoint(3.25, 13.77, 47.91);
-        addCalibrationPoint(3.42, 14.28, 48.37); // Previous measured point distance
-        addCalibrationPoint(3.50, 14.52, 48.59);
-        addCalibrationPoint(3.75, 15.27, 49.27);
-        addCalibrationPoint(4.00, 16.02, 49.95);
-        addCalibrationPoint(4.25, 16.77, 50.63);
-        addCalibrationPoint(4.50, 17.52, 51.31);
-        addCalibrationPoint(4.75, 18.27, 51.99);
-        addCalibrationPoint(5.00, 19.00, 52.67); // Hood Max reached at 5 meters
-    
+       
         System.out.println("[ShooterCalibration] Loaded default calibration:");
         for (CalibrationPoint point : calibrationPoints) {
             System.out.println("  " + point);
@@ -131,29 +95,21 @@ public class ShooterCalibration {
      * Loads fixed hood calibration points (hood stays at fixed angle, only flywheel changes)
      */
     private void loadFixedHoodCalibration() {
-        // Fixed hood at 10° - only flywheel velocity varies with distance
-        // Higher velocities needed at further distances
-      // Fixed Hood @ 10 Degrees
-            addFixedHoodCalibrationPoint(1.615, 10, 43.50); // Measured Point 1
-            addFixedHoodCalibrationPoint(1.75, 10, 44.42);
-            addFixedHoodCalibrationPoint(2.00, 10, 46.13);
-            addFixedHoodCalibrationPoint(2.25, 10, 47.84);
-            addFixedHoodCalibrationPoint(2.537, 10, 49.80); // Measured Point 2
-            addFixedHoodCalibrationPoint(2.75, 10, 50.75);
-            addFixedHoodCalibrationPoint(3.00, 10, 51.87);
-            addFixedHoodCalibrationPoint(3.25, 10, 52.99);
-            addFixedHoodCalibrationPoint(3.40, 10, 53.67); // Measured Point 3
-            addFixedHoodCalibrationPoint(3.50, 10, 54.13);
-            addFixedHoodCalibrationPoint(3.75, 10, 55.28);
-            addFixedHoodCalibrationPoint(4.00, 10, 56.44); // Measured Point 4
-            addFixedHoodCalibrationPoint(4.25, 10, 58.05);
-            addFixedHoodCalibrationPoint(4.50, 10, 59.66);
-            addFixedHoodCalibrationPoint(4.75, 10, 61.27);
-            addFixedHoodCalibrationPoint(5.00, 10, 62.88);
-            addFixedHoodCalibrationPoint(5.105, 10, 67.22); // Measured Point 5
-            addFixedHoodCalibrationPoint(5.25, 10, 64.50);
-            addFixedHoodCalibrationPoint(5.50, 10, 66.11);
-            addFixedHoodCalibrationPoint(5.63, 10, 66.95); // Measured Point 5
+       
+            /* NEW DATA FOR NE UNH EVENT */
+//             // Fixed Hood @ 10 Degrees - High Velocity Curve
+// addFixedHoodCalibrationPoint(0.912+0.305316, 10, 46.00); // Measured Point 1
+// addFixedHoodCalibrationPoint(1.05+0.305316, 10, 48.37);
+// addFixedHoodCalibrationPoint(1.20+2*0.305316, 10, 50.92);
+// addFixedHoodCalibrationPoint(1.35+2*0.305316, 10, 53.46);
+// addFixedHoodCalibrationPoint(1.50, 10, 56.00); // Measured Point 2
+// addFixedHoodCalibrationPoint(1.65, 10, 60.80);
+// addFixedHoodCalibrationPoint(1.80+2, 10, 65.60);
+// addFixedHoodCalibrationPoint(1.95+2, 10, 70.40);
+// addFixedHoodCalibrationPoint(2.10+2, 10, 75.20);
+// addFixedHoodCalibrationPoint(2.25+2, 10, 80.00); // Measured Point 3
+
+addFixedHoodCalibrationPoint(2.25+2*0.305316, 10, 45); //lmao
         System.out.println("[ShooterCalibration] Loaded fixed hood calibration (Hood fixed at 10°):");
         for (CalibrationPoint point : fixedHoodCalibrationPoints) {
             System.out.println("  " + point);

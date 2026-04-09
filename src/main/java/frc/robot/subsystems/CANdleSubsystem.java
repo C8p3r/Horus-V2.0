@@ -7,7 +7,6 @@ import com.ctre.phoenix6.configs.CANdleConfiguration;
 import com.ctre.phoenix6.controls.FireAnimation;
 import com.ctre.phoenix6.controls.LarsonAnimation;
 import com.ctre.phoenix6.controls.RainbowAnimation;
-import com.ctre.phoenix6.controls.SolidColor;
 import com.ctre.phoenix6.controls.StrobeAnimation;
 import com.ctre.phoenix6.hardware.CANdle;
 import com.ctre.phoenix6.signals.AnimationDirectionValue;
@@ -63,7 +62,7 @@ public class CANdleSubsystem extends SubsystemBase {
     
     private final LarsonAnimation candleOuttake = new LarsonAnimation(CANDLE_START, CANDLE_COUNT)
         .withSlot(0)
-        .withColor(new RGBWColor(255, 255, 0, 0)) // Yellow
+        .withColor(new RGBWColor(0, 255, 0, 0)) // Red
         .withSize(1) // Single LED
         .withBounceMode(LarsonBounceValue.Front)
         .withFrameRate(Hertz.of(80));
@@ -72,6 +71,36 @@ public class CANdleSubsystem extends SubsystemBase {
         .withSlot(0)
         .withColor(new RGBWColor(0, 100, 255, 0)) // Blue
         .withFrameRate(Hertz.of(20));
+    
+    // Purple animations for locking phase
+    private final LarsonAnimation candleLocking = new LarsonAnimation(CANDLE_START, CANDLE_COUNT)
+        .withSlot(0)
+        .withColor(new RGBWColor(128, 0, 255, 0)) // Purple (R=128, G=0, B=255)
+        .withSize(2)
+        .withBounceMode(LarsonBounceValue.Front)
+        .withFrameRate(Hertz.of(60));
+    
+    // Yellow animations for shooting ready phase
+    private final LarsonAnimation candleShootingReady = new LarsonAnimation(CANDLE_START, CANDLE_COUNT)
+        .withSlot(0)
+        .withColor(new RGBWColor(255, 255, 0, 0)) // Yellow (R=255, G=255, B=0)
+        .withSize(1)
+        .withBounceMode(LarsonBounceValue.Front)
+        .withFrameRate(Hertz.of(80));
+    
+    private final LarsonAnimation lightbarLocking = new LarsonAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
+        .withSlot(1)
+        .withColor(new RGBWColor(128, 0, 255, 0)) // Purple (GRB order: 0, 128, 255)
+        .withSize(15)
+        .withBounceMode(LarsonBounceValue.Front)
+        .withFrameRate(Hertz.of(60));
+    
+    private final LarsonAnimation lightbarShootingReady = new LarsonAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
+        .withSlot(1)
+        .withColor(new RGBWColor(255, 255, 0, 0)) // Yellow (GRB: 255, 255, 0)
+        .withSize(15)
+        .withBounceMode(LarsonBounceValue.Front)
+        .withFrameRate(Hertz.of(80));
     
     // ZONE 2 - Lightbar visual animations (GRB color order for external strips)
     private final RainbowAnimation lightbarDisabled = new RainbowAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
@@ -96,7 +125,7 @@ public class CANdleSubsystem extends SubsystemBase {
     
     private final LarsonAnimation lightbarOuttake = new LarsonAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
         .withSlot(1)
-        .withColor(new RGBWColor(255, 255, 0, 0)) // Yellow (GRB: 255,255,0) - R and G both on
+        .withColor(new RGBWColor(0, 255, 0, 0)) // Red (GRB: 0,255,0)
         .withSize(15)
         .withBounceMode(LarsonBounceValue.Front)
         .withFrameRate(Hertz.of(63));
@@ -109,13 +138,12 @@ public class CANdleSubsystem extends SubsystemBase {
         .withCooling(0.286)
         .withFrameRate(Hertz.of(43));
     
-    private final FireAnimation lightbarFireBlue = new FireAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
+    private final LarsonAnimation lightbarShootingSpinup = new LarsonAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
         .withSlot(1)
-        .withBrightness(1.0)
-        .withDirection(AnimationDirectionValue.Forward)
-        .withSparking(0.522)
-        .withCooling(0.286)
-        .withFrameRate(Hertz.of(43));
+        .withColor(new RGBWColor(0, 0, 255, 0)) // Blue (GRB: 0,0,255)
+        .withSize(15)
+        .withBounceMode(LarsonBounceValue.Front)
+        .withFrameRate(Hertz.of(100)); // Rapid animation
     
     // State tracking
     private enum RobotState {
@@ -123,14 +151,14 @@ public class CANdleSubsystem extends SubsystemBase {
         IDLE,
         INTAKING,
         OUTTAKING,
+        SHOOTING_LOCKING,  // NEW: Locking phase (purple LEDs)
         SHOOTING_SPINUP,
         SHOOTING_READY
     }
     
     private RobotState currentState = RobotState.IDLE;
     private RobotState lastAppliedState = null; // Track last applied state to avoid redundant updates
-    private double currentFlywheelProgress = 0.0;
-    private double lastAppliedProgress = -1.0; // Track last applied progress
+    private boolean lockLEDs = false; // When true, prevent default command from overriding LEDs
     
     public CANdleSubsystem() {
         canBus = new CANBus(CANdleConstants.CANBUS_NAME);
@@ -172,6 +200,16 @@ public class CANdleSubsystem extends SubsystemBase {
     }
     
     /**
+     * Set LED state to shooting locking phase
+     * CANdle: Purple 2-LED Larson
+     * Lightbar: Purple Larson (size 15)
+     * Indicates robot is acquiring target, NOT yet ready to shoot
+     */
+    public void setShootingLocking() {
+        currentState = RobotState.SHOOTING_LOCKING;
+    }
+    
+    /**
      * Set LED state to shooting (spinning up)
      * CANdle: Blue strobe
      * Lightbar: Fire animation (normal color)
@@ -179,7 +217,7 @@ public class CANdleSubsystem extends SubsystemBase {
      */
     public void setShootingSpinup(double flywheelProgress) {
         currentState = RobotState.SHOOTING_SPINUP;
-        currentFlywheelProgress = flywheelProgress;
+        System.out.println("CANdle: SHOOTING_SPINUP, progress=" + flywheelProgress);
     }
     
     /**
@@ -207,65 +245,50 @@ public class CANdleSubsystem extends SubsystemBase {
             setDisabled();
         }
         
-        // Only update LEDs when state changes or progress changes significantly
+        // Check if state changed
         boolean stateChanged = currentState != lastAppliedState;
-        boolean progressChanged = Math.abs(currentFlywheelProgress - lastAppliedProgress) > 0.05; // 5% threshold
         
-        if (!stateChanged && !progressChanged) {
-            return; // No update needed, prevent flickering
+        // Debug: Log state changes
+        if (stateChanged) {
+            System.out.println("[CANdle] State changed: " + lastAppliedState + " -> " + currentState);
         }
         
-        // Apply animations based on current state
+        // Always apply the animation for the current state (not just on state change)
+        // This ensures animations keep running even if state doesn't change
         switch (currentState) {
             case DISABLED:
-                if (stateChanged) {
-                    candle.setControl(candleRainbow);
-                    candle.setControl(lightbarDisabled);
-                }
+                candle.setControl(candleRainbow);
+                candle.setControl(lightbarDisabled);
                 break;
                 
             case IDLE:
-                if (stateChanged) {
-                    candle.setControl(candleRainbow);
-                    candle.setControl(lightbarIdle);
-                }
+                candle.setControl(candleRainbow);
+                candle.setControl(lightbarIdle);
                 break;
                 
             case INTAKING:
-                if (stateChanged) {
-                    candle.setControl(candleIntake);
-                    candle.setControl(lightbarIntake);
-                }
+                candle.setControl(candleIntake);
+                candle.setControl(lightbarIntake);
                 break;
                 
             case OUTTAKING:
-                if (stateChanged) {
-                    candle.setControl(candleOuttake);
-                    candle.setControl(lightbarOuttake);
-                }
+                candle.setControl(candleOuttake);
+                candle.setControl(lightbarOuttake);
+                break;
+                
+            case SHOOTING_LOCKING:
+                candle.setControl(candleLocking);
+                candle.setControl(lightbarLocking);
                 break;
                 
             case SHOOTING_SPINUP:
-                if (stateChanged || progressChanged) {
-                    candle.setControl(candleShooting);
-                    // Create scaled fire animation based on flywheel progress
-                    FireAnimation scaledFire = new FireAnimation(LIGHTBAR_START, LIGHTBAR_COUNT)
-                        .withSlot(1)
-                        .withBrightness(Math.max(0.3, currentFlywheelProgress))
-                        .withDirection(AnimationDirectionValue.Forward)
-                        .withSparking(0.522)
-                        .withCooling(0.286)
-                        .withFrameRate(Hertz.of(43));
-                    candle.setControl(scaledFire);
-                    lastAppliedProgress = currentFlywheelProgress;
-                }
+                candle.setControl(candleShooting);
+                candle.setControl(lightbarShootingSpinup);
                 break;
                 
             case SHOOTING_READY:
-                if (stateChanged) {
-                    candle.setControl(candleShooting);
-                    candle.setControl(lightbarFireBlue);
-                }
+                candle.setControl(candleShootingReady);
+                candle.setControl(lightbarShootingReady);
                 break;
         }
         
@@ -277,5 +300,27 @@ public class CANdleSubsystem extends SubsystemBase {
      */
     public RobotState getState() {
         return currentState;
+    }
+    
+    /**
+     * Lock LEDs to prevent default command from overriding
+     * Used by ShootCommand to maintain LED state during shooting
+     */
+    public void lockLEDs() {
+        lockLEDs = true;
+    }
+    
+    /**
+     * Unlock LEDs to allow default command to control them again
+     */
+    public void unlockLEDs() {
+        lockLEDs = false;
+    }
+    
+    /**
+     * Check if LEDs are locked
+     */
+    public boolean areLEDsLocked() {
+        return lockLEDs;
     }
 }

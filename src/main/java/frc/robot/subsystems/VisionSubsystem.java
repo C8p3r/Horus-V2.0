@@ -242,15 +242,7 @@ public class VisionSubsystem extends SubsystemBase {
     // NetworkTables publishers for AdvantageScope
     private final StructPublisher<Pose2d> frontVisionPosePublisher;
     private final StructPublisher<Pose2d> backVisionPosePublisher;
-    private final StructPublisher<Pose3d> frontVisionPose3dPublisher;
-    private final StructPublisher<Pose3d> backVisionPose3dPublisher;
     private final StructArrayPublisher<Pose2d> allVisionPosesPublisher;
-    
-    // Publishers for camera-to-tag visualization lines
-    private final StructPublisher<Pose3d> frontCameraPose3dPublisher;
-    private final StructPublisher<Pose3d> backCameraPose3dPublisher;
-    private final StructArrayPublisher<Pose3d> frontTagPosesPublisher;
-    private final StructArrayPublisher<Pose3d> backTagPosesPublisher;
     
     // Field2d widget for SmartDashboard/Shuffleboard
     private final Field2d visionField;
@@ -271,26 +263,16 @@ public class VisionSubsystem extends SubsystemBase {
         frontVisionPosePublisher = ntTable.getStructTopic("FrontCameraPose", Pose2d.struct).publish();
         backVisionPosePublisher = ntTable.getStructTopic("BackCameraPose", Pose2d.struct).publish();
         
-        // 3D pose publishers for 3D visualization in AdvantageScope
-        frontVisionPose3dPublisher = ntTable.getStructTopic("FrontCameraPose3d", Pose3d.struct).publish();
-        backVisionPose3dPublisher = ntTable.getStructTopic("BackCameraPose3d", Pose3d.struct).publish();
-        
         // Array publisher for all vision poses (for AdvantageScope multi-pose view)
         allVisionPosesPublisher = ntTable.getStructArrayTopic("AllVisionPoses", Pose2d.struct).publish();
-        
-        // Publishers for camera-to-tag visualization (camera positions and tag positions)
-        frontCameraPose3dPublisher = ntTable.getStructTopic("FrontCameraPosition3d", Pose3d.struct).publish();
-        backCameraPose3dPublisher = ntTable.getStructTopic("BackCameraPosition3d", Pose3d.struct).publish();
-        frontTagPosesPublisher = ntTable.getStructArrayTopic("FrontVisibleTags", Pose3d.struct).publish();
-        backTagPosesPublisher = ntTable.getStructArrayTopic("BackVisibleTags", Pose3d.struct).publish();
         
         // Field2d widget for Shuffleboard/SmartDashboard
         visionField = new Field2d();
         SmartDashboard.putData("Vision Field", visionField);
         
-        // Initialize Limelights (LEDs off by default)
-        LimelightHelpers.setLEDMode(frontLimelightName, 1);
-        LimelightHelpers.setLEDMode(backLimelightName, 1);
+        // Initialize Limelights (LEDs pipeline-controlled)
+        LimelightHelpers.setLEDMode_PipelineControl(frontLimelightName);
+        LimelightHelpers.setLEDMode_PipelineControl(backLimelightName);
         
         // Publish Limelight camera streams to CameraServer for Elastic dashboard
         setupCameraStreams();
@@ -357,7 +339,7 @@ public class VisionSubsystem extends SubsystemBase {
      */
     private void processLimelightMeasurement(String limelightName) {
         // Check if we have a valid target
-        if (!LimelightHelpers.hasTarget(limelightName)) {
+        if (!LimelightHelpers.getTV(limelightName)) {
             return;
         }
         
@@ -369,11 +351,8 @@ public class VisionSubsystem extends SubsystemBase {
             return;
         }
         
-        // Apply 180 degree rotation correction to the vision measurement
-        Pose2d correctedPose = new Pose2d(
-            poseEstimate.pose.getTranslation(),
-            poseEstimate.pose.getRotation().plus(Rotation2d.fromDegrees(180.0))
-        );
+        // Use raw vision measurement without heading correction
+        Pose2d correctedPose = poseEstimate.pose;
         
         // Calculate dynamic standard deviations based on measurement quality
         Matrix<N3, N1> stdDevs = calculateDynamicStdDevs(poseEstimate);
@@ -400,10 +379,10 @@ public class VisionSubsystem extends SubsystemBase {
      * NETWORKTABLES KEY: Uses "botpose_orb_wpiblue" which is the MegaTag1 pose estimate
      */
     private LimelightHelpers.PoseEstimate getLimelightPoseEstimateForAlliance(String limelightName) {
-        // Use MegaTag1 for BOTH cameras for maximum stability
-        // MegaTag1 uses ORB feature tracking which provides smoother estimates
-        // This reads from NetworkTables key: "botpose_orb_wpiblue"
-        return LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag1(limelightName);
+        // Use ONLY MegaTag1 (ORB tracking for feature-rich environments)
+        // MegaTag1 provides superior stability with feature tracking
+        // This reads exclusively from "botpose_wpiblue" via the helper
+        return LimelightHelpers.getBotPoseEstimate_wpiBlue(limelightName);
     }
     
     /**
@@ -433,11 +412,7 @@ public class VisionSubsystem extends SubsystemBase {
         
         // Check ambiguity for single-tag poses (not applicable for multi-tag)
         if (estimate.tagCount == 1) {
-            // Get pose ambiguity from Limelight
-            double ambiguity = LimelightHelpers.getPoseAmbiguity(limelightName);
-            if (ambiguity > VisionConstants.MAX_AMBIGUITY) {
-                return false;
-            }
+            // Single tag ambiguity not used - rely on tag count requirement instead
         }
         
         // For multi-tag, check tag span (geometry quality)
@@ -530,14 +505,14 @@ public class VisionSubsystem extends SubsystemBase {
         LimelightHelpers.PoseEstimate backEstimate = getLimelightPoseEstimateForAlliance(backLimelightName);
         
         // Front Limelight
-        SmartDashboard.putBoolean("Vision/Front/HasTarget", LimelightHelpers.hasTarget(frontLimelightName));
+        SmartDashboard.putBoolean("Vision/Front/HasTarget", LimelightHelpers.getTV(frontLimelightName));
         SmartDashboard.putNumber("Vision/Front/NumTags", frontEstimate.tagCount);
         SmartDashboard.putNumber("Vision/Front/TagSpan", frontEstimate.tagSpan);
         SmartDashboard.putNumber("Vision/Front/AvgDist", frontEstimate.avgTagDist);
         SmartDashboard.putString("Vision/Front/Mode", "MegaTag1 (botpose_orb_wpiblue)");
         
         // Back Limelight
-        SmartDashboard.putBoolean("Vision/Back/HasTarget", LimelightHelpers.hasTarget(backLimelightName));
+        SmartDashboard.putBoolean("Vision/Back/HasTarget", LimelightHelpers.getTV(backLimelightName));
         SmartDashboard.putNumber("Vision/Back/NumTags", backEstimate.tagCount);
         SmartDashboard.putNumber("Vision/Back/TagSpan", backEstimate.tagSpan);
         SmartDashboard.putNumber("Vision/Back/AvgDist", backEstimate.avgTagDist);
@@ -558,57 +533,18 @@ public class VisionSubsystem extends SubsystemBase {
         LimelightHelpers.PoseEstimate frontEstimate = getLimelightPoseEstimateForAlliance(frontLimelightName);
         LimelightHelpers.PoseEstimate backEstimate = getLimelightPoseEstimateForAlliance(backLimelightName);
         
-        // Apply 180 degree rotation correction to visualization poses
-        Pose2d frontCorrectedPose = null;
-        Pose3d frontCorrectedPose3d = null;
-        if (LimelightHelpers.hasTarget(frontLimelightName) && frontEstimate.tagCount > 0) {
-            frontCorrectedPose = new Pose2d(
-                frontEstimate.pose.getTranslation(),
-                frontEstimate.pose.getRotation().plus(Rotation2d.fromDegrees(180.0))
-            );
-            frontCorrectedPose3d = new Pose3d(
-                frontEstimate.pose3d.getTranslation(),
-                frontEstimate.pose3d.getRotation().rotateBy(new Rotation3d(0, 0, Math.toRadians(180.0)))
-            );
-        }
-        
-        Pose2d backCorrectedPose = null;
-        Pose3d backCorrectedPose3d = null;
-        if (LimelightHelpers.hasTarget(backLimelightName) && backEstimate.tagCount > 0) {
-            backCorrectedPose = new Pose2d(
-                backEstimate.pose.getTranslation(),
-                backEstimate.pose.getRotation().plus(Rotation2d.fromDegrees(180.0))
-            );
-            backCorrectedPose3d = new Pose3d(
-                backEstimate.pose3d.getTranslation(),
-                backEstimate.pose3d.getRotation().rotateBy(new Rotation3d(0, 0, Math.toRadians(180.0)))
-            );
-        }
-        
-        // Publish 2D poses for field visualization (with rotation correction)
-        if (frontCorrectedPose != null) {
-            frontVisionPosePublisher.set(frontCorrectedPose);
-        }
-        if (backCorrectedPose != null) {
-            backVisionPosePublisher.set(backCorrectedPose);
-        }
-        
-        // Publish 3D poses for 3D visualization in AdvantageScope (with rotation correction)
-        if (frontCorrectedPose3d != null) {
-            frontVisionPose3dPublisher.set(frontCorrectedPose3d);
-        }
-        if (backCorrectedPose3d != null) {
-            backVisionPose3dPublisher.set(backCorrectedPose3d);
-        }
-        
-        // Publish array of all valid vision poses (with rotation correction)
+        // Publish 2D poses for field visualization
         List<Pose2d> allPoses = new ArrayList<>();
-        if (frontCorrectedPose != null) {
-            allPoses.add(frontCorrectedPose);
+        if (LimelightHelpers.getTV(frontLimelightName) && frontEstimate != null && frontEstimate.tagCount > 0) {
+            allPoses.add(frontEstimate.pose);
+            frontVisionPosePublisher.set(frontEstimate.pose);
         }
-        if (backCorrectedPose != null) {
-            allPoses.add(backCorrectedPose);
+        if (LimelightHelpers.getTV(backLimelightName) && backEstimate != null && backEstimate.tagCount > 0) {
+            allPoses.add(backEstimate.pose);
+            backVisionPosePublisher.set(backEstimate.pose);
         }
+        
+        // Publish array of all valid vision poses
         allVisionPosesPublisher.set(allPoses.toArray(new Pose2d[0]));
         
         // Update Field2d widget with the PRIMARY pose (vision when available, fused when not)
@@ -629,47 +565,12 @@ public class VisionSubsystem extends SubsystemBase {
     }
     
     /**
-     * Publishes camera positions and tag positions for visualization in AdvantageScope
-     * This creates lines from each camera to the AprilTags it can see
+     * Publishes camera and tag visualization data
+     * Simplified - only publishes what's available via standard methods
      */
     private void publishCameraToTagLines() {
-        // Get current robot pose from drivetrain
-        Pose2d robotPose2d = drivetrain.getState().Pose;
-        Pose3d robotPose3d = new Pose3d(robotPose2d);
-        
-        // Front camera
-        if (LimelightHelpers.hasTarget(frontLimelightName)) {
-            // Calculate camera position in field space
-            Pose3d frontCameraPose = LimelightHelpers.getCameraPose3d(
-                frontLimelightName,
-                robotPose3d,
-                VisionConstants.ROBOT_TO_FRONT_CAMERA
-            );
-            frontCameraPose3dPublisher.set(frontCameraPose);
-            
-            // Get visible tag poses in field space
-            Pose3d[] frontTagPoses = LimelightHelpers.getVisibleTagPoses3d(frontLimelightName, robotPose3d);
-            if (frontTagPoses.length > 0) {
-                frontTagPosesPublisher.set(frontTagPoses);
-            }
-        }
-        
-        // Back camera
-        if (LimelightHelpers.hasTarget(backLimelightName)) {
-            // Calculate camera position in field space
-            Pose3d backCameraPose = LimelightHelpers.getCameraPose3d(
-                backLimelightName,
-                robotPose3d,
-                VisionConstants.ROBOT_TO_BACK_CAMERA
-            );
-            backCameraPose3dPublisher.set(backCameraPose);
-            
-            // Get visible tag poses in field space
-            Pose3d[] backTagPoses = LimelightHelpers.getVisibleTagPoses3d(backLimelightName, robotPose3d);
-            if (backTagPoses.length > 0) {
-                backTagPosesPublisher.set(backTagPoses);
-            }
-        }
+        // This method is kept for future expansion
+        // Currently all visualization is handled via the pose publishers in updateTelemetry()
     }
     
     /**
@@ -688,11 +589,16 @@ public class VisionSubsystem extends SubsystemBase {
     
     /**
      * Set LED mode for both Limelights
-     * 0 = pipeline mode, 1 = off, 2 = blink, 3 = on
+     * Modes: off, on, blink, pipeline-control
      */
-    public void setLEDMode(int mode) {
-        LimelightHelpers.setLEDMode(frontLimelightName, mode);
-        LimelightHelpers.setLEDMode(backLimelightName, mode);
+    public void setLEDMode(boolean on) {
+        if (on) {
+            LimelightHelpers.setLEDMode_ForceOn(frontLimelightName);
+            LimelightHelpers.setLEDMode_ForceOn(backLimelightName);
+        } else {
+            LimelightHelpers.setLEDMode_ForceOff(frontLimelightName);
+            LimelightHelpers.setLEDMode_ForceOff(backLimelightName);
+        }
     }
     
     /**
@@ -789,10 +695,74 @@ public class VisionSubsystem extends SubsystemBase {
     
     /**
      * Get the most trusted vision measurement from all available cameras
-     * Uses quality metrics (tag count, distance, area, tag span) to determine trust score
+     * Uses MegaTag1 pose directly from getBotPoseEstimate_wpiBlue as the definitive source
      * @return The most trusted vision measurement, or null if no valid measurement available
      */
     public VisionMeasurement getMostTrustedVisionMeasurement() {
+        // Get MT1 estimates from both cameras - use these directly without modification
+        LimelightHelpers.PoseEstimate frontEstimate = LimelightHelpers.getBotPoseEstimate_wpiBlue(frontLimelightName);
+        LimelightHelpers.PoseEstimate backEstimate = LimelightHelpers.getBotPoseEstimate_wpiBlue(backLimelightName);
+        
+        // Check which cameras have valid targets
+        boolean frontValid = frontEstimate != null && frontEstimate.tagCount > 1;
+        boolean backValid = backEstimate != null && backEstimate.tagCount > 1;
+        
+        // If neither camera has valid target, return null
+        if (!frontValid && !backValid) {
+            return null;
+        }
+        
+        // Calculate latency
+        double frontLatency = frontValid ? 
+            (edu.wpi.first.wpilibj.Timer.getFPGATimestamp() - frontEstimate.timestampSeconds) : 0;
+        double backLatency = backValid ?
+            (edu.wpi.first.wpilibj.Timer.getFPGATimestamp() - backEstimate.timestampSeconds) : 0;
+        
+        // Create VisionMeasurement objects with MT1 poses (no modifications)
+        VisionMeasurement frontMeasurement = frontValid ? new VisionMeasurement(
+            frontEstimate.pose,
+            frontEstimate.tagCount,
+            frontEstimate.avgTagDist,
+            frontEstimate.avgTagArea,
+            frontEstimate.tagSpan,
+            frontEstimate.timestampSeconds,
+            frontLimelightName,
+            frontLatency,
+            0.0  // Ambiguity not available from current LimelightHelpers
+        ) : null;
+        
+        VisionMeasurement backMeasurement = backValid ? new VisionMeasurement(
+            backEstimate.pose,
+            backEstimate.tagCount,
+            backEstimate.avgTagDist,
+            backEstimate.avgTagArea,
+            backEstimate.tagSpan,
+            backEstimate.timestampSeconds,
+            backLimelightName,
+            backLatency,
+            0.0  // Ambiguity not available from current LimelightHelpers
+        ) : null;
+        
+        // If only one camera has valid measurement, return it
+        if (frontValid && !backValid) {
+            return frontMeasurement;
+        }
+        if (backValid && !frontValid) {
+            return backMeasurement;
+        }
+        
+        // Both cameras have valid measurements - compare trust scores
+        double frontScore = frontMeasurement.getTrustScore();
+        double backScore = backMeasurement.getTrustScore();
+        
+        return frontScore >= backScore ? frontMeasurement : backMeasurement;
+    }
+    
+    /**
+     * Get the most trusted camera measurement from all available cameras
+     * @return The most trusted camera vision measurement, or null if no valid camera measurement
+     */
+    public VisionMeasurement getMostTrustedCameraMeasurement() {
         // Get estimates from both cameras
         LimelightHelpers.PoseEstimate frontEstimate = getLimelightPoseEstimateForAlliance(frontLimelightName);
         LimelightHelpers.PoseEstimate backEstimate = getLimelightPoseEstimateForAlliance(backLimelightName);
@@ -814,10 +784,6 @@ public class VisionSubsystem extends SubsystemBase {
         double backLatency = backValid ?
             (edu.wpi.first.wpilibj.Timer.getFPGATimestamp() - backEstimate.timestampSeconds) : 0;
         
-        // Get pose ambiguity for each camera
-        double frontAmbiguity = frontValid ? LimelightHelpers.getPoseAmbiguity(frontLimelightName) : 0;
-        double backAmbiguity = backValid ? LimelightHelpers.getPoseAmbiguity(backLimelightName) : 0;
-        
         // Create VisionMeasurement objects for valid cameras
         VisionMeasurement frontMeasurement = frontValid ? new VisionMeasurement(
             frontEstimate.pose,
@@ -828,7 +794,7 @@ public class VisionSubsystem extends SubsystemBase {
             frontEstimate.timestampSeconds,
             frontLimelightName,
             frontLatency,
-            frontAmbiguity
+            0.0  // Ambiguity not available from current LimelightHelpers
         ) : null;
         
         VisionMeasurement backMeasurement = backValid ? new VisionMeasurement(
@@ -840,7 +806,7 @@ public class VisionSubsystem extends SubsystemBase {
             backEstimate.timestampSeconds,
             backLimelightName,
             backLatency,
-            backAmbiguity
+            0.0  // Ambiguity not available from current LimelightHelpers
         ) : null;
         
         // If only one camera has valid measurement, return it

@@ -358,6 +358,9 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     // Reference to VisionSubsystem for vision-primary pose
     private VisionSubsystem visionSubsystem;
     
+    // Cache the last valid vision pose to use as fallback when vision is lost
+    private Pose2d lastValidVisionPose = null;
+    
     /**
      * Set the vision subsystem reference for vision-primary pose estimation
      * When vision is available, getPose() will return the vision pose directly
@@ -372,20 +375,38 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     /**
      * Get the robot's current pose.
      * When vision is available and valid, returns the vision pose directly (bypasses wheel odometry).
-     * Otherwise, returns the fused pose from the Kalman filter.
+     * Otherwise, returns the last known valid vision pose if available, or the fused pose from the Kalman filter.
+     * 
+     * This ensures that when vision is lost, the robot continues from its last known vision position
+     * rather than falling back to wheel odometry which may have drifted.
      *
-     * @return The robot's pose - vision pose if available, otherwise fused pose
+     * @return The robot's pose - vision pose if available, otherwise last vision pose, otherwise fused pose
      */
     public Pose2d getPose() {
+        Pose2d pose;
+        
         // If vision subsystem is available and has a valid measurement, use vision pose
         if (visionSubsystem != null) {
             VisionSubsystem.VisionMeasurement visionMeasurement = visionSubsystem.getMostTrustedVisionMeasurement();
             if (visionMeasurement != null) {
-                return visionMeasurement.pose();
+                pose = visionMeasurement.pose();
+                // Cache the valid vision pose for fallback when vision is lost
+                lastValidVisionPose = pose;
+            } else {
+                // Vision lost - try to use cached vision pose first
+                if (lastValidVisionPose != null) {
+                    pose = lastValidVisionPose;
+                } else {
+                    // No cached vision - fall back to fused pose from Kalman filter
+                    pose = getState().Pose;
+                }
             }
+        } else {
+            // Fall back to fused pose from Kalman filter
+            pose = getState().Pose;
         }
         
-        // Fall back to fused pose from Kalman filter
-        return getState().Pose;
+        // Return pose directly without transformation
+        return pose;
     }
 }

@@ -43,10 +43,12 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.CommandScheduler;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
+import com.pathplanner.lib.auto.NamedCommands;
 
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.*;
@@ -63,7 +65,7 @@ public class RobotContainer {
     public static final boolean DISABLE_ALL_TELEMETRY = false;
     
     /** Shooter calibration mode: true = manual sliders, false = auto interpolation */
-    public static final boolean SHOOTER_CALIBRATION_MODE = true;
+    public static final boolean SHOOTER_CALIBRATION_MODE = false;
     
     // ==================== DRIVETRAIN CONSTANTS ====================
     
@@ -84,14 +86,14 @@ public class RobotContainer {
     
     // Shooter System
     private final TurretSubsystem turretSubsystem = new TurretSubsystem(
-        () -> drivetrain.getState().Pose,
+        () -> drivetrain.getPose(),
         () -> drivetrain.getState().Speeds
     );
     private final FlywheelSubsystem flywheelSubsystem = new FlywheelSubsystem();
     
     // Intake System
-    private final IntakeRollerSubsystem intakeRollerSubsystem = new IntakeRollerSubsystem();
-    private final TurboKickerSubsystem turboKickerSubsystem = new TurboKickerSubsystem();
+    public final IntakeRollerSubsystem intakeRollerSubsystem = new IntakeRollerSubsystem();
+    public final TurboKickerSubsystem turboKickerSubsystem = new TurboKickerSubsystem();
     private final IntakeWinchSubsystem intakeWinchSubsystem = new IntakeWinchSubsystem();
     
     // LEDs
@@ -121,6 +123,9 @@ public class RobotContainer {
         // Apply configuration flags
         ShootingCalculator.getCalibration().setCalibrationMode(SHOOTER_CALIBRATION_MODE);
         
+        // Register named commands for autonomous use
+        registerNamedCommands();
+        
         // Configure robot
         configureFuelSim();
         configureAutoChooser();
@@ -133,8 +138,112 @@ public class RobotContainer {
     
     private void configureFuelSim() {
         FuelSim.getInstance().registerRobot(0.76, 0.76, 0.30,
-            () -> drivetrain.getState().Pose, () -> drivetrain.getState().Speeds);
+            () -> drivetrain.getPose(), () -> drivetrain.getState().Speeds);
         FuelSim.getInstance().start();
+    }
+    
+    // ==================== AUTONOMOUS COMMANDS ====================
+    // These are public methods that can be called from autonomous routines
+    
+    private void registerNamedCommands() {
+        // Intake commands
+        NamedCommands.registerCommand("IntakeOn", 
+            IntakeCommand.intake(intakeRollerSubsystem, turboKickerSubsystem).withTimeout(8.0));
+        
+        NamedCommands.registerCommand("IntakeOff", 
+            IntakeCommand.eject(intakeRollerSubsystem, turboKickerSubsystem).withTimeout(2.0));
+        
+        NamedCommands.registerCommand("IntakeIdle", 
+            IntakeCommand.idle(intakeRollerSubsystem, turboKickerSubsystem).withTimeout(0.5));
+        
+        NamedCommands.registerCommand("IntakeStop",
+            Commands.runOnce(() -> {
+                CommandScheduler.getInstance().cancel(intakeRollerSubsystem.getCurrentCommand());
+                intakeRollerSubsystem.stop();
+                turboKickerSubsystem.stop();
+            }));
+        
+        // Shooter commands
+        NamedCommands.registerCommand("ShootPreload",
+            ShootCommand.shoot(
+                flywheelSubsystem, turboKickerSubsystem, turretSubsystem,
+                intakeRollerSubsystem, intakeWinchSubsystem, drivetrain, candleSubsystem,
+                45.0, Rotation2d.fromDegrees(0.0)
+            ).withTimeout(5.0));
+        NamedCommands.registerCommand("SmartShoot",
+            createSmartShootCommand());
+        
+        // Turret commands
+        NamedCommands.registerCommand("ZeroTurret",
+            Commands.runOnce(() -> turretSubsystem.zeroTurret(), turretSubsystem));
+        NamedCommands.registerCommand("ClearTarget",
+            Commands.runOnce(() -> turretSubsystem.setTarget(null), turretSubsystem));
+        NamedCommands.registerCommand("SetBlueTarget",
+            Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.BLUE_HUB), turretSubsystem));
+        NamedCommands.registerCommand("SetRedTarget",
+            Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.RED_HUB), turretSubsystem));
+        
+        // LED commands
+        NamedCommands.registerCommand("LEDsIdle",
+            Commands.runOnce(() -> candleSubsystem.setIdle(), candleSubsystem));
+        NamedCommands.registerCommand("LEDsIntaking",
+            Commands.runOnce(() -> candleSubsystem.setIntaking(), candleSubsystem));
+        NamedCommands.registerCommand("LEDsOuttaking",
+            Commands.runOnce(() -> candleSubsystem.setOuttaking(), candleSubsystem));
+        NamedCommands.registerCommand("LEDsLocking",
+            Commands.runOnce(() -> candleSubsystem.setShootingLocking(), candleSubsystem));
+        NamedCommands.registerCommand("LEDsReady",
+            Commands.runOnce(() -> candleSubsystem.setShootingReady(), candleSubsystem));
+        
+        // Climber commands
+        NamedCommands.registerCommand("ClimberDeploy",
+            Commands.runOnce(() -> intakeWinchSubsystem.setTargetPosition(0.0), intakeWinchSubsystem));
+        NamedCommands.registerCommand("ClimberStore",
+            Commands.runOnce(() -> intakeWinchSubsystem.setTargetPosition(8.0), intakeWinchSubsystem));
+    }
+    
+    public Command getIntakeCommand() {
+        return IntakeCommand.intake(intakeRollerSubsystem, turboKickerSubsystem);
+    }
+    
+    public Command getEjectCommand() {
+        return IntakeCommand.eject(intakeRollerSubsystem, turboKickerSubsystem);
+    }
+    
+    public Command getIdleIntakeCommand() {
+        return IntakeCommand.idle(intakeRollerSubsystem, turboKickerSubsystem);
+    }
+    
+    public Command getShootPreloadCommand() {
+        return ShootCommand.shoot(
+            flywheelSubsystem, turboKickerSubsystem, turretSubsystem,
+            intakeRollerSubsystem, intakeWinchSubsystem, drivetrain, candleSubsystem,
+            60.0, Rotation2d.fromDegrees(0.0)
+        );
+    }
+    
+    public Command getSmartShootCommand() {
+        return createSmartShootCommand();
+    }
+    
+    public Command getZeroTurretCommand() {
+        return Commands.runOnce(() -> turretSubsystem.zeroTurret(), turretSubsystem);
+    }
+    
+    public Command getClearTargetCommand() {
+        return Commands.runOnce(() -> turretSubsystem.setTarget(null), turretSubsystem);
+    }
+    
+    public Command getIdleLEDsCommand() {
+        return Commands.runOnce(() -> candleSubsystem.setIdle(), candleSubsystem);
+    }
+    
+    public Command getIntakingLEDsCommand() {
+        return Commands.runOnce(() -> candleSubsystem.setIntaking(), candleSubsystem);
+    }
+    
+    public Command getEjectingLEDsCommand() {
+        return Commands.runOnce(() -> candleSubsystem.setOuttaking(), candleSubsystem);
     }
     
     // ==================== DASHBOARD BUTTONS ====================
@@ -151,10 +260,11 @@ public class RobotContainer {
     }
     // ==================== DEFAULT COMMANDS ====================
     
-    private void configureDefaultCommands() {
+    public void configureDefaultCommands() {
         configureDrivetrainDefaultCommand();
         configureIntakeDefaultCommands();
         configureShooterDefaultCommands();
+        configureCANdleDefaultCommand();
     }
     
     private void configureDrivetrainDefaultCommand() {
@@ -165,8 +275,8 @@ public class RobotContainer {
                 double driverRotation = -joystick.getRightX() * maxAngularRate;
                 double totalRotation = driverRotation + chassisRotationAssist;
                 
-                return drive.withVelocityX(-joystick.getLeftY() * maxSpeed)
-                    .withVelocityY(-joystick.getLeftX() * maxSpeed)
+                return drive.withVelocityX(joystick.getLeftY() * maxSpeed)
+                    .withVelocityY(joystick.getLeftX() * maxSpeed)
                     .withRotationalRate(totalRotation);
             })
         );
@@ -201,6 +311,15 @@ public class RobotContainer {
         );
     }
     
+    private void configureCANdleDefaultCommand() {
+        // CANdle continuously updates based on robot state
+        candleSubsystem.setDefaultCommand(
+            Commands.run(() -> {
+                updateLEDFeedback();
+            }, candleSubsystem).withName("LED Feedback")
+        );
+    }
+    
     private void updateFlywheelFromCalibration() {
         var calibration = ShootingCalculator.getCalibration();
         
@@ -211,7 +330,7 @@ public class RobotContainer {
             // Auto mode: Interpolate based on distance to target
             var target = turretSubsystem.getTarget();
             if (target != null) {
-                var robotPose = drivetrain.getState().Pose;
+                var robotPose = drivetrain.getPose();
                 double distance = robotPose.getTranslation().getDistance(target.toTranslation2d());
                 flywheelSubsystem.setVelocity(calibration.getFlywheelVelocity(distance));
             } else {
@@ -279,49 +398,109 @@ public class RobotContainer {
     }
     
     private void configureShooterControls() {
-        // Target tracking and smart shooting with triggers
+        // Left trigger = Blue hub targeting + shoot
+        // onTrue: Starts the shoot sequence when trigger pressed
+        // onFalse: Cancels shooting and clears target when trigger released
         joystick.leftTrigger()
-            .onTrue(Commands.sequence(
-                Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.BLUE_HUB)),
-                createSmartShootCommand()
-            ))
-            .onFalse(Commands.runOnce(() -> turretSubsystem.setTarget(null))); // Clear target on release
+            .onTrue(
+                Commands.sequence(
+                    Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.BLUE_HUB)),
+                    createSmartShootCommand()
+                )
+            )
+            .onFalse(
+                Commands.runOnce(() -> {
+                    System.out.println("[RobotContainer] Trigger released - cancelling shoot and clearing target");
+                    turretSubsystem.setTarget(null);
+                    // CommandScheduler will handle cancelling the current shoot command
+                }).andThen(Commands.runOnce(() -> CommandScheduler.getInstance().cancelAll()))
+            );
         
+        // Right trigger = Red hub targeting + shoot
+        // onTrue: Starts the shoot sequence when trigger pressed
+        // onFalse: Cancels shooting and clears target when trigger released
         joystick.rightTrigger()
-            .onTrue(Commands.sequence(
-                Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.RED_HUB)),
-                createSmartShootCommand()
-            ))
-            .onFalse(Commands.runOnce(() -> turretSubsystem.setTarget(null))); // Clear target on release
+            .onTrue(
+                Commands.sequence(
+                    Commands.runOnce(() -> turretSubsystem.setTarget(frc.robot.constants.FieldConstants.RED_HUB)),
+                    createSmartShootCommand()
+                )
+            )
+            .onFalse(
+                Commands.runOnce(() -> {
+                    System.out.println("[RobotContainer] Trigger released - cancelling shoot and clearing target");
+                    turretSubsystem.setTarget(null);
+                    // CommandScheduler will handle cancelling the current shoot command
+                }).andThen(Commands.runOnce(() -> CommandScheduler.getInstance().cancelAll()))
+            );
         
         // Driver A button also does smart shoot (uses already-set target)
         joystick.a().onTrue(createSmartShootCommand());
         
         // Operator controls
         operatorController.povDown().onTrue(Commands.runOnce(() -> turretSubsystem.setTarget(null))); // Clear target
-        operatorController.b().onTrue(ShootCommand.shoot( // Manual shoot
+        operatorController.b().onTrue(ShootCommand.shoot( // Manual shoot with X-stance and LED feedback
             flywheelSubsystem, turboKickerSubsystem, turretSubsystem,
-            intakeRollerSubsystem,
+            intakeRollerSubsystem, intakeWinchSubsystem, drivetrain, candleSubsystem,
             60.0, Rotation2d.fromDegrees(0.0)
         ));
         
         // Calibration
         operatorController.a().onTrue(Commands.runOnce(() -> turretSubsystem.zeroTurret(), turretSubsystem));
     }
+    
+    /**
+     * Immediate shooter stop - forcefully stops all systems NOW
+     */
+    private Command createImmediateShooterStopCommand() {
+        return Commands.runOnce(() -> {
+            // FORCE STOP ALL SYSTEMS IMMEDIATELY - no sequence, no delays
+            turretSubsystem.setTarget(null);
+            turboKickerSubsystem.stop();
+            flywheelSubsystem.stop();
+            candleSubsystem.setIdle();
+        });
+    }
+    
+    /**
+     * Create shutdown sequence: reversed burst on kicker motors then complete stop
+     */
+    private Command createShooterShutdownCommand() {
+        return Commands.sequence(
+            // Reversed burst for 0.2 seconds
+            Commands.run(() -> {
+                turboKickerSubsystem.setFeedMotorsDutyCycle(-0.5);
+                turboKickerSubsystem.setKickerMotorDutyCycle(-0.5);
+                turboKickerSubsystem.setBeltFloorDutyCycle(-0.5);
+            }, turboKickerSubsystem).withTimeout(0.2),
+            // Then stop everything
+            Commands.runOnce(() -> {
+                // Stop all turboKicker motors
+                turboKickerSubsystem.stop();
+                // Stop flywheel
+                flywheelSubsystem.stop();
+                // Clear target and stop turret tracking
+                turretSubsystem.setTarget(null);
+                // Reset LEDs to idle state
+                candleSubsystem.setIdle();
+            })
+        );
+    }
     private Command createSmartShootCommand() {
         return Commands.defer(() -> {
             var target = turretSubsystem.getTarget();
             if (target == null) return Commands.none();
             
-            var solution = ShootingCalculator.calculate(drivetrain.getState().Pose, target);
+            var solution = ShootingCalculator.calculate(drivetrain.getPose(), target);
             if (!solution.isValid) return Commands.none();
             
+            // Return the shoot command - trigger control handles cancellation via .onFalse()
             return ShootCommand.shoot(
                 flywheelSubsystem, turboKickerSubsystem, turretSubsystem,
-                intakeRollerSubsystem,
+                intakeRollerSubsystem, intakeWinchSubsystem, drivetrain, candleSubsystem,
                 solution.flywheelVelocityRPS, solution.getTurretAngle()
             );
-        }, java.util.Set.of(flywheelSubsystem, turboKickerSubsystem, turretSubsystem, intakeRollerSubsystem));
+        }, java.util.Set.of(flywheelSubsystem, turboKickerSubsystem, turretSubsystem, intakeRollerSubsystem, intakeWinchSubsystem));
     }
     
     private void configureIntakeControls() {
@@ -335,14 +514,34 @@ public class RobotContainer {
     // ==================== AUTONOMOUS ====================
     
     private void configureAutoChooser() {
+        // Set default to None
         autoChooser.setDefaultOption("None", Commands.none());
-        autoChooser.addOption("Example Auto", pathPlannerSubsystem.getAutonomousCommand("Example Auto"));
-        autoChooser.addOption("Drive Forward", Commands.sequence(
-            drivetrain.runOnce(() -> drivetrain.seedFieldCentric(Rotation2d.kZero)),
-            drivetrain.applyRequest(() -> drive.withVelocityX(0.5).withVelocityY(0).withRotationalRate(0))
-                .withTimeout(3.0),
-            drivetrain.applyRequest(() -> idle)
-        ));
+        autoChooser.addOption("Auto-A", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-A"), java.util.Set.of()));
+        autoChooser.addOption("Auto-B", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-B"), java.util.Set.of()));
+        autoChooser.addOption("Auto-C", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-C"), java.util.Set.of()));
+        autoChooser.addOption("Auto-D", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-D"), java.util.Set.of()));
+        autoChooser.addOption("Auto-E", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-E"), java.util.Set.of()));
+        autoChooser.addOption("Auto-F", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-F"), java.util.Set.of()));
+        autoChooser.addOption("Auto-G", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-G"), java.util.Set.of()));
+        autoChooser.addOption("Auto-H", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-H"), java.util.Set.of()));
+        autoChooser.addOption("Auto-I", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-I"), java.util.Set.of()));
+        autoChooser.addOption("Auto-J", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-J"), java.util.Set.of()));
+        autoChooser.addOption("Auto-K", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-K"), java.util.Set.of()));
+        autoChooser.addOption("Auto-L", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-L"), java.util.Set.of()));
+        autoChooser.addOption("Auto-M", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-M"), java.util.Set.of()));
+        autoChooser.addOption("Auto-N", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-N"), java.util.Set.of()));
+        autoChooser.addOption("Auto-O", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-O"), java.util.Set.of()));
+        autoChooser.addOption("Auto-P", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-P"), java.util.Set.of()));
+        autoChooser.addOption("Auto-Q", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-Q"), java.util.Set.of()));
+        autoChooser.addOption("Auto-R", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-R"), java.util.Set.of()));
+        autoChooser.addOption("Auto-S", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-S"), java.util.Set.of()));
+        autoChooser.addOption("Auto-T", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-T"), java.util.Set.of()));
+        autoChooser.addOption("Auto-U", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-U"), java.util.Set.of()));
+        autoChooser.addOption("Auto-V", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-V"), java.util.Set.of()));
+        autoChooser.addOption("Auto-W", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-W"), java.util.Set.of()));
+        autoChooser.addOption("Auto-X", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-X"), java.util.Set.of()));
+        autoChooser.addOption("Auto-Y", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-Y"), java.util.Set.of()));
+        autoChooser.addOption("Auto-Z", Commands.defer(() -> pathPlannerSubsystem.getAutonomousCommand("Auto-Z"), java.util.Set.of()));
         
         if (!DISABLE_ALL_TELEMETRY) {
             SmartDashboard.putData("Auto Chooser", autoChooser);
@@ -350,7 +549,9 @@ public class RobotContainer {
     }
     
     public Command getAutonomousCommand() {
-        return autoChooser.getSelected();
+        Command selected = autoChooser.getSelected();
+        System.out.println("[RobotContainer] Selected autonomous command: " + (selected != null ? selected.getName() : "null"));
+        return selected;
     }
     
     // ==================== PERIODIC UPDATES ====================
@@ -363,7 +564,6 @@ public class RobotContainer {
     
     public void periodic() {
         updateVelocityDipDetection();
-        updateLEDFeedback();
         updateControllerRumble();
     }
     
@@ -404,6 +604,11 @@ public class RobotContainer {
     }
     
     private void updateLEDFeedback() {
+        // Don't override if a command (like ShootCommand) has locked the LEDs
+        if (candleSubsystem.areLEDsLocked()) {
+            return;
+        }
+        
         // Two-zone LED system:
         // Zone 1 (CANdle 0-7): Debugging feedback
         // Zone 2 (Lightbar 8-35): Visual feedback
@@ -418,10 +623,12 @@ public class RobotContainer {
         if (isShooting) {
             // Shooting state
             if (flywheelAtSpeed) {
-                // At speed: Blue fire
+                // At speed: Blue strobe
                 candleSubsystem.setShootingReady();
+                System.out.println("LED: SHOOTING_READY (velocity=" + flywheelSubsystem.getVelocityRPS() + 
+                                   ", target=" + flywheelSubsystem.getTargetVelocityRPS() + ")");
             } else {
-                // Spinning up: Normal fire with progress
+                // Spinning up: Rapid blue Larson with progress
                 double progress = flywheelSubsystem.getVelocityRPS() / flywheelSubsystem.getTargetVelocityRPS();
                 candleSubsystem.setShootingSpinup(progress);
             }

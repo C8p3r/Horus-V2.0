@@ -1,0 +1,182 @@
+{
+  "version": "2025.0",
+  "waypoints": [
+    {
+      "anchor": {
+        "x": 3.5175993117596676,
+        "y": 4.180294507037842
+      },
+      "prevControl": null,
+      "nextControl": {
+        "x": 3.2162740735979387,
+        "y": 4.279414744355155
+      },
+      "isLocked": false,
+      "linkedName": null
+    },
+    {
+      "anchor": {
+        "x": 2.9727851153460403,
+        "y": 4.180294507037842
+      },
+      "prevControl": {
+        "x": 2.7308786362657993,
+        "y": 4.243391696983202
+      },
+      "nextControl": {
+        "x": 3.2146915944262813,
+        "y": 4.117197317092482
+      },
+      "isLocked": false,
+      "linkedName": null
+    },
+    {
+      "anchor": {
+        "x": 3.5175993117596676,
+        "y": 4.180294507037842
+      },
+      "prevControl": {
+        "x": 3.7657302457218425,
+        "y": 4.149781565339951
+      },
+      "nextControl": {
+        "x": 3.0420860865200687,
+        "y": 4.238768906366561
+      },
+      "isLocked": false,
+      "linkedName": null
+    },
+    {
+      "anchor": {
+        "x": 1.7943723641495741,
+        "y": 5.219084575949185
+      },
+      "prevControl": {
+        "x": 3.292881699666296,
+        "y": 4.245968360749416
+      },
+      "nextControl": {
+        "x": 1.3429496120033955,
+        "y": 5.512233767356842
+      },
+      "isLocked": false,
+      "linkedName": null
+    },
+    {
+      "anchor": {
+        "x": 0.8021822272171639,
+        "y": 6.239831271094947
+      },
+      "prevControl": {
+        "x": 1.373516427401856,
+        "y": 6.20541470345367
+      },
+      "nextControl": {
+        "x": 0.45330003706936306,
+        "y": 6.260847565047204
+      },
+      "isLocked": false,
+      "linkedName": null
+    },
+    {
+      "anchor": {
+        "x": 0.45690663666598297,
+        "y": 6.239831271094947
+      },
+      "prevControl": {
+        "x": 0.7785041181326687,
+        "y": 6.150600072612171
+      },
+      "nextControl": {
+        "x": 0.13081456134969993,
+        "y": 6.330309550226688
+      },
+      "isLocked": false,
+      "linkedName": null
+    },
+    {
+      "anchor": {
+        "x": 1.4955867319929521,
+        "y": 6.386935290432728
+      },
+      "prevControl": {
+        "x": 1.185266652767263,
+        "y": 6.234286372603267
+      },
+      "nextControl": {
+        "x": 2.081794384974039,
+        "y": 6.675295502489233
+      },
+      "isLocked": false,
+      "linkedName": null
+    },
+    {
+      "anchor": {
+        "x": 0.30432411388681313,
+        "y": 5.774285943978141
+      },
+      "prevControl": {
+        "x": 0.014958782070053078,
+        "y": 5.712204435750356
+      },
+      "nextControl": {
+        "x": 3.860762803418978,
+        "y": 6.537297450503806
+      },
+      "isLocked": false,
+      "linkedName": null
+    },
+    {
+      "anchor": {
+        "x": 0.45690663666598297,
+        "y": 5.549280089992585
+      },
+      "prevControl": {
+        "x": 0.8303530184646297,
+        "y": 6.124276537621976
+      },
+      "nextControl": {
+        "x": 0.13669473292627138,
+        "y": 5.056248918416657
+      },
+      "isLocked": false,
+      "linkedName": null
+    },
+    {
+      "anchor": {
+        "x": 3.1059428421199753,
+        "y": 4.180294507037842
+      },
+      "prevControl": {
+        "x": 1.7388490941268155,
+        "y": 4.742651446734157
+      },
+      "nextControl": null,
+      "isLocked": false,
+      "linkedName": null
+    }
+  ],
+  "rotationTargets": [],
+  "constraintZones": [],
+  "pointTowardsZones": [],
+  "eventMarkers": [],
+  "globalConstraints": {
+    "maxVelocity": 1.5,
+    "maxAcceleration": 1.0,
+    "maxAngularVelocity": 540.0,
+    "maxAngularAcceleration": 720.0,
+    "nominalVoltage": 12.0,
+    "unlimited": false
+  },
+  "goalEndState": {
+    "velocity": 0,
+    "rotation": 179.01223960036023
+  },
+  "reversed": false,
+  "folder": null,
+  "idealStartingState": {
+    "velocity": 0,
+    "rotation": 178.85423716182495
+  },
+  "useDefaultConstraints": false
+}

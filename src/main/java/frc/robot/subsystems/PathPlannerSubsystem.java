@@ -49,20 +49,33 @@ public class PathPlannerSubsystem extends SubsystemBase {
     private Optional<PathPlannerPath> currentPath = Optional.empty();
     private Optional<String> currentAutoName = Optional.empty();
     
-    // Default path constraints (can be overridden per path)
-    private static final double DEFAULT_MAX_VELOCITY_MPS = 4.0;
-    private static final double DEFAULT_MAX_ACCEL_MPSPS = 3.0;
-    private static final double DEFAULT_MAX_ANGULAR_VEL_RPS = Math.PI;
-    private static final double DEFAULT_MAX_ANGULAR_ACCEL_RPSPS = Math.PI;
+    // ==================== PATHPLANNER TUNING CONSTANTS ====================
+    // These constants define the behavior of autonomous path following
+    
+    // Default path constraints (can be overridden per path in PathPlanner GUI)
+    private static final double DEFAULT_MAX_VELOCITY_MPS = 4.0;         // Max velocity during path (m/s)
+    private static final double DEFAULT_MAX_ACCEL_MPSPS = 3.0;          // Max acceleration (m/s²)
+    private static final double DEFAULT_MAX_ANGULAR_VEL_RPS = Math.PI;  // Max rotational velocity (rad/s)
+    private static final double DEFAULT_MAX_ANGULAR_ACCEL_RPSPS = Math.PI; // Max rotational acceleration (rad/s²)
+    
+    // PPHolonomicDriveController PID tuning
+    // These PIDs control how the robot corrects position and rotation errors while following the path
+    private static final double TRANSLATION_P = 0.0;    // Position correction gain - very conservative to prevent overshoot
+    private static final double TRANSLATION_I = 0.0;    // Integral correction - typically 0 for trajectory following
+    private static final double TRANSLATION_D = 0.0;    // Derivative (dampening) - strong dampening to prevent overshoot
+    
+    private static final double ROTATION_P = 0.0;       // Rotation correction gain - very conservative
+    private static final double ROTATION_I = 0.0;       // Integral correction - typically 0 for trajectory following
+    private static final double ROTATION_D = 0.0;       // Derivative (dampening) - strong dampening for rotation
     
     /**
      * Creates a new PathPlannerSubsystem
      * 
      * @param drivetrain The swerve drivetrain to control
      */
-    public PathPlannerSubsystem(CommandSwerveDrivetrain drivetrain) {
+ public PathPlannerSubsystem(CommandSwerveDrivetrain drivetrain) {
         this.drivetrain = drivetrain;
-        
+
         // Configure PathPlanner AutoBuilder
         configurePathPlanner();
     }
@@ -82,8 +95,8 @@ public class PathPlannerSubsystem extends SubsystemBase {
                 this::getChassisSpeeds,         // ChassisSpeeds supplier
                 this::driveRobotRelative,       // ChassisSpeeds consumer (robot-relative)
                 new PPHolonomicDriveController(
-                    new PIDConstants(5.0, 0.0, 0.0),  // Translation PID
-                    new PIDConstants(5.0, 0.0, 0.0)   // Rotation PID
+                    new PIDConstants(TRANSLATION_P, TRANSLATION_I, TRANSLATION_D),  // Translation PID
+                    new PIDConstants(ROTATION_P, ROTATION_I, ROTATION_D)             // Rotation PID
                 ),
                 config,
                 this::shouldFlipPath,           // Should flip for red alliance
@@ -93,10 +106,18 @@ public class PathPlannerSubsystem extends SubsystemBase {
             isPathPlannerConfigured = true;
             Logger.recordOutput("PathPlanner/Configured", true);
             
+            // Log configuration for debugging
+            System.out.println("[PathPlanner] Successfully configured AutoBuilder");
+            System.out.println("[PathPlanner] Translation PID: P=" + TRANSLATION_P + " D=" + TRANSLATION_D);
+            System.out.println("[PathPlanner] Rotation PID: P=" + ROTATION_P + " D=" + ROTATION_D);
+            System.out.println("[PathPlanner] Default Max Velocity: " + DEFAULT_MAX_VELOCITY_MPS + " m/s");
+            System.out.println("[PathPlanner] Default Max Acceleration: " + DEFAULT_MAX_ACCEL_MPSPS + " m/s²");
+            
         } catch (Exception e) {
             DriverStation.reportError("Failed to configure PathPlanner: " + e.getMessage(), e.getStackTrace());
             isPathPlannerConfigured = false;
             Logger.recordOutput("PathPlanner/Configured", false);
+            System.out.println("[PathPlanner] ERROR: Failed to configure AutoBuilder: " + e.getMessage());
         }
     }
     
@@ -124,7 +145,7 @@ public class PathPlannerSubsystem extends SubsystemBase {
      * Gets current robot pose from drivetrain odometry
      */
     private Pose2d getPose() {
-        return drivetrain.getState().Pose;
+        return drivetrain.getPose();
     }
     
     /**
@@ -146,10 +167,16 @@ public class PathPlannerSubsystem extends SubsystemBase {
      * This is the core output consumer for PathPlanner
      */
     private void driveRobotRelative(ChassisSpeeds robotRelativeSpeeds) {
-        // Apply robot-relative speeds directly to drivetrain
+        // Apply robot-relative speeds directly to drivetrain with open loop voltage control
+        System.out.printf("[PathPlanner] Driving: vx=%.2f, vy=%.2f, omega=%.2f%n", 
+            robotRelativeSpeeds.vxMetersPerSecond, 
+            robotRelativeSpeeds.vyMetersPerSecond, 
+            robotRelativeSpeeds.omegaRadiansPerSecond);
+        
         drivetrain.setControl(
             new com.ctre.phoenix6.swerve.SwerveRequest.ApplyRobotSpeeds()
                 .withSpeeds(robotRelativeSpeeds)
+                .withDriveRequestType(com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType.OpenLoopVoltage)
         );
     }
     
@@ -297,23 +324,32 @@ public class PathPlannerSubsystem extends SubsystemBase {
     public Command getAutonomousCommand(String autoName) {
         if (!isPathPlannerConfigured) {
             DriverStation.reportError("PathPlanner not configured! Cannot load auto.", false);
+            System.out.println("[PathPlanner] ERROR: PathPlanner not configured!");
             return Commands.none();
         }
         
         try {
+            System.out.println("[PathPlanner] Loading autonomous: " + autoName);
             currentAutoName = Optional.of(autoName);
             
-            return new PathPlannerAuto(autoName)
+            Command autoCommand = new PathPlannerAuto(autoName);
+            System.out.println("[PathPlanner] Successfully created PathPlannerAuto for: " + autoName);
+            
+            return autoCommand
                 .beforeStarting(() -> {
+                    System.out.println("[PathPlanner] Starting autonomous: " + autoName);
                     Logger.recordOutput("PathPlanner/ActiveAuto", autoName);
                     Logger.recordOutput("PathPlanner/IsRunningAuto", true);
                 })
                 .finallyDo(() -> {
+                    System.out.println("[PathPlanner] Finished autonomous: " + autoName);
                     Logger.recordOutput("PathPlanner/IsRunningAuto", false);
                     currentAutoName = Optional.empty();
                 });
                 
         } catch (Exception e) {
+            System.out.println("[PathPlanner] ERROR loading auto " + autoName + ": " + e.getMessage());
+            e.printStackTrace();
             DriverStation.reportError("Failed to load auto: " + autoName, e.getStackTrace());
             return Commands.none();
         }
